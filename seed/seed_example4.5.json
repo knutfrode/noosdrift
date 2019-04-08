@@ -1,0 +1,38 @@
+{
+"simulation_description" : {
+    "request_id" : 1,
+    "owner_id" : 1,
+    "title" : "my_title",
+    "summary" : "my_summary",
+    "tags" : ["my","list","of","tags"],
+    "simulation_type" : "forward",
+    "simulation_start_time" : "2018-10-17T13:00:00z",
+    "simulation_end_time" : "2018-10-17T18:00:00z"
+    },
+"drifter" : {
+    "drifter_type" : "object",
+    "drifter_name" : "marine life rafts no-ballast"
+    },
+"initial_condition" : {
+    "geometry" : "point",
+    "lon" : 2.159,
+    "lat" : 52.12,
+    "radius" : 1000,
+    "number" : 2500,
+    "time" : "2018-10-17T13:05:00z",
+    "cone" : "False"
+    },
+"model_set_up" : {
+    "2D/3D drift" : "2D",
+    "current" : "True",
+    "waves" : "True",
+    "wind" : "True",
+    "beaching" : "False",
+    "horizontal_spreading" : "False",
+    "natural_vertical_dispersion" : "False",
+    "buoyancy" : "False",
+    "evaporation" : "False",
+    "dissolution" : "False",
+    "sedimentation" : "False"
+    }
+}
