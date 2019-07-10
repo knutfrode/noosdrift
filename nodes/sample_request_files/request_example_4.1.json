@@ -1,0 +1,41 @@
+{
+"simulation_description" : {
+   "request_id"      : 1,
+    "owner_id"        : 1,
+    "title"           : "my_title",
+    "summary"         : "my_summary",
+    "tags"            :  ["my","list","of","tags"],
+    "simulation_type" : "forward",
+    "simulation_start_time" : "2018-10-17T13:00:00z",
+    "simulation_end_time" :  "2018-10-17T18:00:00z",
+},
+"drifter" : {
+   "drifter_type" : "oil",
+    "drifter_name" : "gasoline",
+    "total_mass" : 10000
+},
+"initial_condition" : {
+   "geometry" : "point",
+    "lon" : 2.159,
+    "lat" : 52.1,
+    "radius" : 1000,
+    "number" : 2500,
+    "time" : "2018-10-17T13:07:12z"
+},
+"model_set_up" : {
+    "model" : "opendrift",
+    "ocean_forcing" : "cmems_nws7",
+    "wind_forcing" : "ecmwf",
+    "2D/3D drift" : "3D",
+    "current" : "True",
+    "waves"   : "True",
+    "wind"    : "True",
+    "beaching" : "True",
+    "horizontal_spreading" : "True",
+    "natural_vertical_dispersion" : "True",
+    "buoyancy" : "True",
+    "evaporation" : "True",
+    "dissolution" : "False",
+    "sedimentation" : "False"
+}
+}
