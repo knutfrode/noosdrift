@@ -8,6 +8,7 @@
     "simulation_type" : "forward",
     "simulation_start_time" : "2018-10-17T13:00:00z",
     "simulation_end_time" :  "2018-10-17T18:00:00z",
+    "output_path": "/path/to/store_output/"
 },
 "drifter" : {
    "drifter_type" : "oil",
