@@ -2,6 +2,7 @@
 
 import os
 import glob
+import json
 import pyproj
 import numpy as np
 import matplotlib
@@ -12,6 +13,7 @@ from netCDF4 import Dataset, num2date
 matplotlib.colors.colorConverter.to_rgba('mediumseagreen', alpha=.1)
 
 def get_ellipse(lons, lats):
+    '''Calculate best-fit ellipse for a cloud of lon,lat positions'''
     lons = lons[lons.mask==0]
     lats = lats[lats.mask==0]
     centerlon = np.mean(lons)
@@ -37,6 +39,16 @@ def get_ellipse(lons, lats):
     if major == 1:
         angle = -angle
     return major_axis, minor_axis, angle
+
+
+# To encode JSON
+class MyEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.floating):
+            return np.round(float(obj), 4)
+        else:
+            return super(MyEncoder, self).default(obj)
+
 
 class Simulation():
 
@@ -75,13 +87,6 @@ class Simulation():
         #    stranded_index = self.status_categories.index('stranded')*1
         #    self.num_stranded = np.sum(self.status==stranded_index, axis=0)
         infile.close()
-
-        ##plt.imshow(self.status)
-        #plt.imshow(stranded)
-        #plt.plot(self.num_stranded)
-        #plt.title(filename)
-        #plt.colorbar()
-        #plt.show()
 
         # Determining current and wind source from filename
         # Would be better to have attributes in netCDF files
@@ -142,6 +147,68 @@ class Simulation():
                 label=self.label)
 
         ax.legend()
+
+    def json_summary(self):
+        '''Return some common JSON properties'''
+        s = {'TimeStep': '%sH' % (self.time_step.seconds/3600.),
+             'StartTime': self.times[0].isoformat('T')+'Z',
+             'EndTime': self.times[-1].isoformat('T')+'Z',
+             'number_of_times': len(self.times)}
+        return s
+
+    def get_points_geojson(self, filename=None):
+        '''Return gejson dictionary with all particles for each timestep'''
+        
+        pg = {'type': 'FeatureCollection',
+              'properties': self.json_summary(),
+              'features': []}
+
+        for i in range(len(self.times)):
+            coords = [ [lo,la] for lo,la in
+                       zip(self.lon[:,i], self.lat[:,i]) ]
+            pg['features'].append({'type': 'Feature',
+                'properties': {'time':
+                                self.times[i].isoformat('T')+'Z'},
+                'geometry': {'type': 'MultiPoint',
+                             'coordinates': coords}})
+
+        if filename is not None:
+            with open(filename, 'w') as outfile:
+                json.dump(pg, outfile, cls=MyEncoder, indent=2)
+
+        return pg
+
+
+    def get_analysis_geojson(self, filename=None):
+
+        pg = {'type': 'FeatureCollection',
+              'properties': self.json_summary(),
+              'features': []}
+
+        for i in range(len(self.times)):
+            lon = self.lon[:,i]
+            lat = self.lat[:,i]
+            localproj = pyproj.Proj(
+                '+proj=stere +lat_0=%f +lat_ts=%f +lon_0=%s' %
+                (lat.mean(), lat.mean(), lon.mean()))
+            x, y = localproj(lon, lat, inverse=False)
+            major_axis, minor_axis, angle = \
+                get_ellipse(lon, lat)
+
+            pg['features'].append({
+                'time': self.times[i].isoformat('T')+'Z',
+                'ellipsis_major_axis': np.round(major_axis, 2),
+                'ellipsis_minor_axis': np.round(minor_axis, 2),
+                'ellipsis_major_axis_azimuth_angle': np.round(angle, 2),
+                'distance_of_center_from_start': np.round(self.distance[i], 2),
+                'azimuth_direction_of_center_from_start':
+                    np.round(self.azimuth[i], 2)})
+
+        if filename is not None:
+            with open(filename, 'w') as outfile:
+                json.dump(pg, outfile, cls=MyEncoder, indent=2)
+
+        return pg
 
     def __repr__(self):
         return 'Simulation: ' + self.filename
@@ -220,8 +287,7 @@ class SimulationCollection():
         plt.show()
 
     def write_geojson(self, filename):
-        print('GeoJSON')
-
+        '''Obsolete, as this will be plotted from axes and angle'''
         for s in self.simulations:
             print(s)
             print(dir(s))
@@ -268,15 +334,18 @@ class SimulationCollection():
 if __name__ == '__main__':
 
 
-    # Usage demonstration
-    simulation_files = glob.glob('./sample_simulations/*.nc')
-    s = SimulationCollection(simulation_files)
-    print s
-    s.plot()
-    s.plot_metrics()
-    stop
+    ## Usage demonstration
+    #simulation_files = glob.glob('./sample_simulations/*.nc')
+    #s = SimulationCollection(simulation_files)
+    #print s
+    #s.plot()
+    #s.plot_metrics()
+    #stop
     
-    #s1 = Simulation('opendrift_oil_france_rhw.nc')
+    s1 = Simulation('sample_simulations/opendrift_oil_norway_rlw.nc')
+    s1.get_points_geojson(filename='noos_points.json')
+    s1.get_analysis_geojson(filename='noos_analysis.json')
+
     #s2 = Simulation('mothy_oil_france_rhw.nc')
     #s3 = Simulation('mothy_oil_france_rhw_without_nws.nc')
     #s = SimulationCollection(s1, s2, s3)
