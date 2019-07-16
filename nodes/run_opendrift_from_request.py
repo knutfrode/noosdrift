@@ -73,7 +73,8 @@ if __name__ == '__main__':
     
     try:
         json_request_file = sys.argv[1]
-        run_opendrift_simulation_request(json_request_file)
-    except:
+    except Exception as e:
+        print(e)
         raise ValueError('Usage: %s <json_request_file>' %
                          sys.argv[0])
+    run_opendrift_simulation_request(json_request_file)
