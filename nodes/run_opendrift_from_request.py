@@ -30,6 +30,15 @@ def run_opendrift_simulation_request(request_json_file):
         'ecmwf': 'sample_forcing_data/ec_wind_14Jul2019.nc',
         'arome': 'sample_forcing_data/arome_wind_14Jul2019.nc'}
 
+    oil_type_mapping = {  # from Noos-name to OpenDrift oil name
+        'gasoline': '*GENERIC GASOLINE',
+        'kerosene': 'FUEL OIL NO.1 (JET FUEL A)',
+        'light crude oil': '*GENERIC LIGHT CRUDE',
+        'diesel oil': '*GENERIC DIESEL',
+        'heavy crude oil': '*GENERIC HEAVY CRUDE',
+        'fuel oil no. 6': '*GENERIC FUEL OIL No. 6',
+        'heavy fuel oil': '*GENERIC HEAVY FUEL OIL'}
+
     def return_status_code(status_code, comment=None,
                            resultfile=None):
         print('Returning with status code %i: %s' %
@@ -42,7 +51,6 @@ def run_opendrift_simulation_request(request_json_file):
             print(comment)
         with open('out.json', 'w') as outfile:
             json.dump(j, outfile, indent=2)
-        print('exiting...')
         sys.exit(status_code)
 
     # Import JSON request file
@@ -60,14 +68,13 @@ def run_opendrift_simulation_request(request_json_file):
 
     # Prepare readers for forcing data
     current_source = j['model_set_up']['ocean_forcing']
-    wind_source = j['model_set_up']['wind_forcing']
-
     if current_source not in current_sources:
         return_status_code(9,
             comment='Current source %s not available' %
                 current_source)
     else:
         current_URL = current_sources[current_source]
+    wind_source = j['model_set_up']['wind_forcing']
     if wind_source not in wind_sources:
         return_status_code(9,
             comment='Wind source %s not available' %
@@ -90,17 +97,22 @@ def run_opendrift_simulation_request(request_json_file):
             'Wind reader does not cover seeding location')
 
     # Check if oil or leeway simulation
+    seed_kwargs = {}
+    drifter_name = j['drifter']['drifter_name']
     if j['drifter']['drifter_type'] == 'oil':
-        from opendrift.models.openoil3D import OpenOil3D as Model
+        from opendrift.models.openoil3D import OpenOil3D
+        seed_kwargs['oiltype'] = oil_type_mapping[drifter_name]
+        o = OpenOil3D(weathering_model='noaa')
     elif j['drifter']['drifter_type'] == 'object':
-        from opendrift.models.leeway import Leeway as Model
-    o = Model()  # initiate simulation object
+        seed_kwargs['objectType'] = drifter_name
+        from opendrift.models.leeway import Leeway
+        o = Leeway()
 
     # Adding readers
     o.add_reader([current_reader, wind_reader])
 
     # Seed elements at requested time and positions
-    o.seed_elements(lons, lats, time=times)
+    o.seed_elements(lons, lats, time=times, **seed_kwargs)
 
     # Run simulation, and save output to netCDF file
     resultfile = j['simulation_description']['output_path'] + \
