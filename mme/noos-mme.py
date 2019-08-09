@@ -112,7 +112,7 @@ class Simulation():
             lon, lat) for lon, lat in zip(self.centerlon, self.centerlat)]
         self.azimuth, backaz, self.distance = zip(*res)
         self.azimuth = np.array(self.azimuth)
-        self.azimuth[0] = np.nan
+        self.azimuth[0] = 0
         self.distance = np.array(self.distance)
 
     def get_ellipses(self):
@@ -156,34 +156,17 @@ class Simulation():
              'number_of_times': len(self.times)}
         return s
 
-    def get_points_geojson(self, filename=None):
-        '''Return gejson dictionary with all particles for each timestep'''
-        
-        pg = {'type': 'FeatureCollection',
-              'properties': self.json_summary(),
-              'features': []}
-
-        for i in range(len(self.times)):
-            coords = [ [lo,la] for lo,la in
-                       zip(self.lon[:,i], self.lat[:,i]) ]
-            pg['features'].append({'type': 'Feature',
-                'properties': {'time':
-                                self.times[i].isoformat('T')+'Z'},
-                'geometry': {'type': 'MultiPoint',
-                             'coordinates': coords}})
-
-        if filename is not None:
-            with open(filename, 'w') as outfile:
-                json.dump(pg, outfile, cls=MyEncoder, indent=2)
-
-        return pg
-
-
     def get_analysis_geojson(self, filename=None):
 
         pg = {'type': 'FeatureCollection',
               'properties': self.json_summary(),
               'features': []}
+
+        # Temporarily add hardoded forcing names
+        pg['properties']['modelName'] = 'opendrift'
+        pg['properties']['requestID'] = 0
+        pg['properties']['wind_forcing'] = 'ecmwf'
+        pg['properties']['ocean_forcing'] = 'cmems-nws7'
 
         for i in range(len(self.times)):
             lon = self.lon[:,i]
@@ -195,14 +178,22 @@ class Simulation():
             major_axis, minor_axis, angle = \
                 get_ellipse(lon, lat)
 
+            # individual points
+            coords = [ [lo,la] for lo,la in
+                       zip(self.lon[:,i], self.lat[:,i]) ]
+
             pg['features'].append({
                 'time': self.times[i].isoformat('T')+'Z',
+                'latitude_of_center': np.mean(lat),
+                'longitude_of_center': np.mean(lon),
                 'ellipsis_major_axis': np.round(major_axis, 2),
                 'ellipsis_minor_axis': np.round(minor_axis, 2),
                 'ellipsis_major_axis_azimuth_angle': np.round(angle, 2),
                 'distance_of_center_from_start': np.round(self.distance[i], 2),
                 'azimuth_direction_of_center_from_start':
-                    np.round(self.azimuth[i], 2)})
+                    np.round(self.azimuth[i], 2),
+                'geometry': {'type': 'MultiPoint',
+                             'coordinates': coords}})
 
         if filename is not None:
             with open(filename, 'w') as outfile:
@@ -343,8 +334,8 @@ if __name__ == '__main__':
     #stop
     
     s1 = Simulation('sample_simulations/opendrift_oil_norway_rlw.nc')
-    s1.get_points_geojson(filename='noos_points.json')
-    s1.get_analysis_geojson(filename='noos_analysis.json')
+    #s1.get_points_geojson(filename='noos_points.json')
+    s1.get_analysis_geojson(filename='noosdrift_requestID_opendrift_cmems_nws7_ecmwf.json')
 
     #s2 = Simulation('mothy_oil_france_rhw.nc')
     #s3 = Simulation('mothy_oil_france_rhw_without_nws.nc')
