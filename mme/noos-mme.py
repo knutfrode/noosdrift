@@ -12,6 +12,13 @@ from netCDF4 import Dataset, num2date
 
 matplotlib.colors.colorConverter.to_rgba('mediumseagreen', alpha=.1)
 
+def process_folder(folder):
+    '''Make MME analysis of all simulations stored in a folder'''
+
+    simulation_files = glob.glob(folder + '/*.nc')
+    s = SimulationCollection(simulation_files)
+    print s
+
 def get_ellipse(lons, lats):
     '''Calculate best-fit ellipse for a cloud of lon,lat positions'''
     lons = lons[lons.mask==0]
@@ -332,10 +339,12 @@ if __name__ == '__main__':
     #s.plot()
     #s.plot_metrics()
     #stop
+
+    process_folder('sample_simulations')
     
-    s1 = Simulation('sample_simulations/opendrift_oil_norway_rlw.nc')
-    #s1.get_points_geojson(filename='noos_points.json')
-    s1.get_analysis_geojson(filename='noosdrift_requestID_opendrift_cmems_nws7_ecmwf.json')
+    #s1 = Simulation('sample_simulations/opendrift_oil_norway_rlw.nc')
+    ##s1.get_points_geojson(filename='noos_points.json')
+    #s1.get_analysis_geojson(filename='noosdrift_requestID_opendrift_cmems_nws7_ecmwf.json')
 
     #s2 = Simulation('mothy_oil_france_rhw.nc')
     #s3 = Simulation('mothy_oil_france_rhw_without_nws.nc')
