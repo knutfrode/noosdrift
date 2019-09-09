@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+import sys
+import argparse
 import os
 import glob
 import json
@@ -12,12 +14,26 @@ from netCDF4 import Dataset, num2date
 
 matplotlib.colors.colorConverter.to_rgba('mediumseagreen', alpha=.1)
 
-def process_folder(folder):
+def process_folder(inputfolder, outputfolder, noosID=None):
     '''Make MME analysis of all simulations stored in a folder'''
 
-    simulation_files = glob.glob(folder + '/*.nc')
+    simulation_files = glob.glob(inputfolder + '/*.nc')
     s = SimulationCollection(simulation_files)
-    print s
+    s.noosID = noosID
+    if noosID is None:
+        noosID_string = 'simulationID'
+    else:
+        noosID_string = noosID
+    print(s)
+
+    s.plot_center()
+    stop
+
+    # Produce JSON file for each simulation
+    for sim in s.simulations:
+        print(sim)
+        sim.requestID = noosID  # Should be read from file
+        sim.get_analysis_geojson(filename = outputfolder + '/noosdrift_%s_%s_%s_%s.json' % (noosID_string, sim.model, sim.current, sim.wind))
 
 def get_ellipse(lons, lats):
     '''Calculate best-fit ellipse for a cloud of lon,lat positions'''
@@ -170,10 +186,10 @@ class Simulation():
               'features': []}
 
         # Temporarily add hardoded forcing names
-        pg['properties']['modelName'] = 'opendrift'
-        pg['properties']['requestID'] = 0
-        pg['properties']['wind_forcing'] = 'ecmwf'
-        pg['properties']['ocean_forcing'] = 'cmems-nws7'
+        pg['properties']['modelName'] = self.model
+        pg['properties']['requestID'] = self.requestID
+        pg['properties']['wind_forcing'] = self.wind
+        pg['properties']['ocean_forcing'] = self.current
 
         for i in range(len(self.times)):
             lon = self.lon[:,i]
@@ -261,8 +277,14 @@ class SimulationCollection():
                 s.plot_timestep(ax, i)
             plt.title('Duration: ' + str(s.times[i] - s.times[0]))
             plt.show()
- 
 
+    def plot_center(self):
+        
+        for s in self.simulations:
+            plt.plot(s.centerlon, s.centerlat)
+        plt.show()
+            
+ 
     def plot_metrics(self):
 
         fig, (axdist, axazimuth, axarea) = plt.subplots(3)
@@ -329,10 +351,43 @@ class SimulationCollection():
                 print(polygonStr)
             stop
 
+    def __repr__(self):
+        r = 'NoosID: %s\n' % self.noosID
+
+        r = r + '%12s%12s%12s\n' % ('Model', 'Current', 'Wind')
+        r = r + '-'*36 + '\n'
+        for s in self.simulations:
+            r = r + '%12s%12s%12s\n' % (s.model, s.current, s.wind)
+
+        return r
+
 if __name__ == '__main__':
 
 
-    ## Usage demonstration
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-i', dest='inputfolder',
+                        default='sample_simulations',
+                        help='Folder with netCDF files from simulations')
+    parser.add_argument('-o', dest='outputfolder',
+                        default='mme-output',
+                        help='Folder with MME output')
+
+    args = parser.parse_args()
+
+    print('Input folder: ' + args.inputfolder)
+    print('Output folder: ' + args.outputfolder)
+
+    if not(os.path.exists(args.inputfolder)):
+        sys.exit('Input folder does not exist: ' + args.inputfolder)
+    if not(os.path.exists(args.outputfolder)):
+        print('Output folder does not exist, creating: ' + args.outputfolder)
+        try:
+            os.mkdir(args.outputfolder)
+        except:
+            sys.exit('Could not create output folder: ' + args.outputfolder)
+
+    process_folder(args.inputfolder, args.outputfolder)
+
     #simulation_files = glob.glob('./sample_simulations/*.nc')
     #s = SimulationCollection(simulation_files)
     #print s
@@ -340,8 +395,6 @@ if __name__ == '__main__':
     #s.plot_metrics()
     #stop
 
-    process_folder('sample_simulations')
-    
     #s1 = Simulation('sample_simulations/opendrift_oil_norway_rlw.nc')
     ##s1.get_points_geojson(filename='noos_points.json')
     #s1.get_analysis_geojson(filename='noosdrift_requestID_opendrift_cmems_nws7_ecmwf.json')
