@@ -12,6 +12,9 @@ import matplotlib.pyplot as plt
 from matplotlib import patches
 from netCDF4 import Dataset, num2date
 
+from sklearn.cluster import MeanShift
+from sklearn.datasets.samples_generator import make_blobs
+
 matplotlib.colors.colorConverter.to_rgba('mediumseagreen', alpha=.1)
 
 def process_folder(inputfolder, outputfolder, noosID=None):
@@ -19,6 +22,10 @@ def process_folder(inputfolder, outputfolder, noosID=None):
 
     simulation_files = glob.glob(inputfolder + '/*.nc')
     s = SimulationCollection(simulation_files)
+
+    s.get_clusters(outfile='mme.json')
+    stop
+
     s.noosID = noosID
     if noosID is None:
         noosID_string = 'simulationID'
@@ -27,7 +34,7 @@ def process_folder(inputfolder, outputfolder, noosID=None):
     print(s)
 
     s.plot_center()
-    stop
+    #stop
 
     # Produce JSON file for each simulation
     for sim in s.simulations:
@@ -264,6 +271,74 @@ class SimulationCollection():
 
         self.num_timesteps = self.simulations[0].num_timesteps
 
+    def get_clusters(self, outfile):
+
+        colors = ['r', 'g', 'b', 'y', 'm', 'k']
+        pg = {'type': 'FeatureCollection',
+              'simulations': {},
+              'features': []}
+
+        for i,s in enumerate(self.simulations):
+            pg['simulations'][i] = '%s-%s-%s' % (
+                                    s.model, s.current, s.wind)
+        
+        for i in range(2, self.num_timesteps, 1):
+
+            pg['features'].append({
+                'time': s.times[i].isoformat('T')+'Z',
+                'clusters': {}
+                })
+
+            X = [ [s.centerlon[i], s.centerlat[i]]
+                    for s in self.simulations]
+            X = np.array(X)
+            # Add perturbation
+            X = np.concatenate((X, X[-1,np.newaxis] + .001*np.ones(2,)), axis=0)
+            X = np.concatenate((X, X[-1,np.newaxis] + .0005*np.ones(2,)), axis=0)
+
+            ms = MeanShift()
+            ms = MeanShift(bandwidth=.005)
+            ms.fit(X)
+            labels = ms.labels_
+            print(labels)
+            cluster_centers = ms.cluster_centers_
+            print(cluster_centers)
+            n_clusters_ = len(np.unique(labels))
+            print("Number of estimated clusters:", n_clusters_)
+
+            for c in range(n_clusters_):
+                members = np.where(labels == c)[0]
+                print '%s: %s' % (c, members)
+                cluster = {'members': members.tolist(),
+                           'centerlon': cluster_centers[c][0],
+                           'centerlat': cluster_centers[c][1]}
+                #pg['features'][-1]['clusters'][c]['members'] = members.tolist()
+                pg['features'][-1]['clusters'][c] = cluster
+
+            #for j in range(len(X)):
+            #    print(X[j][0], X[j][1], 'XY')
+            #    print(colors[labels[j]])
+            #    plt.plot(X[j][0], X[j][1],
+            #             colors[labels[j]] + '*',
+            #             markersize=10)
+
+            #plt.scatter(cluster_centers[:,0],cluster_centers[:,1],
+            #            marker="x",color='k', s=150,
+            #            linewidths=5, zorder=10)
+
+            #plt.title(i)
+            #plt.xlabel('Longitude')
+            #plt.ylabel('Latitude')
+            #plt.axis('scaled')
+            #plt.show()
+
+        print('Clusters')
+        print(pg)
+
+        if outfile is not None:
+            with open(outfile, 'w') as of:
+                json.dump(pg, of, cls=MyEncoder, indent=2)
+
     def plot(self):
         for i in range(5, self.num_timesteps, 8):
             fig, ax = plt.subplots() 
@@ -280,9 +355,13 @@ class SimulationCollection():
 
     def plot_center(self):
         
-        for s in self.simulations:
-            plt.plot(s.centerlon, s.centerlat)
-        plt.show()
+        for i in [10, 20]:
+            for s in self.simulations:
+                plt.plot(s.centerlon, s.centerlat, label='%12s%12s%12s\n' % (s.model, s.current, s.wind))
+                plt.plot(s.centerlon[i], s.centerlat[i], '*')
+            
+            plt.legend()
+            plt.show()
             
  
     def plot_metrics(self):
