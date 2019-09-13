@@ -1,9 +1,15 @@
 #!/usr/bin/env python
 
+# Multi-Model-Ensemble (MME) analysis tool 
+# developed within the Noos-Drift project
+# by Knut-Frode Dagestad (MET Norway) 
+# Sept 2019
+
 import sys
 import argparse
 import os
 import glob
+from math import radians, cos, sin, asin, sqrt
 import json
 import pyproj
 import numpy as np
@@ -11,36 +17,112 @@ import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib import patches
 from netCDF4 import Dataset, num2date
-
 from sklearn.cluster import MeanShift
-from sklearn.datasets.samples_generator import make_blobs
 
-matplotlib.colors.colorConverter.to_rgba('mediumseagreen', alpha=.1)
+colors = ['r', 'g', 'b', 'm', 'y', 'k']
 
-def process_folder(inputfolder, outputfolder, noosID=None):
-    '''Make MME analysis of all simulations stored in a folder'''
+
+def process_folder(inputfolder, outputfolder, noosID='requestID'):
+    '''Perform MME analysis of all simulations stored in a folder'''
 
     simulation_files = glob.glob(inputfolder + '/*.nc')
     s = SimulationCollection(simulation_files)
-
-    s.get_clusters(outfile='mme.json')
-    stop
-
     s.noosID = noosID
-    if noosID is None:
-        noosID_string = 'simulationID'
-    else:
-        noosID_string = noosID
-    print(s)
 
-    s.plot_center()
-    #stop
+    print('Performing MME-analysis')
+    s.mme_analysis(outfile='mme.json')
+
+    plot_mme_analysis(filename='mme.json', simulationcollection=s)
 
     # Produce JSON file for each simulation
+    print('Writing point JSON files for each simulation')
     for sim in s.simulations:
-        print(sim)
-        sim.requestID = noosID  # Should be read from file
-        sim.get_analysis_geojson(filename = outputfolder + '/noosdrift_%s_%s_%s_%s.json' % (noosID_string, sim.model, sim.current, sim.wind))
+        sim.write_point_geojson(filename = outputfolder +
+            '/noosdrift_%s_%s_%s_%s.json' % (
+            noosID, sim.model, sim.current, sim.wind))
+
+def plot_mme_analysis(filename, simulationcollection=None):
+    '''Import and plot the contents of a MME output JSON file'''
+
+    try:
+        import cartopy.crs as ccrs
+        import cartopy.feature as cfeature
+        import matplotlib.patches as mpatches
+    except:
+        raise ImportError('Please install Cartopy to make plots')
+
+    j = json.load(open(filename, 'r'))
+    lonmin = j['coverage']['lonmin']
+    lonmax = j['coverage']['lonmax']
+    latmin = j['coverage']['latmin']
+    latmax = j['coverage']['latmax']
+    centerlon = j['coverage']['centerlon']
+    centerlat = j['coverage']['centerlat']
+
+    times = np.arange(0, len(j['features']))
+    for ti in times:
+        f = j['features'][ti]
+        fig = plt.figure()
+        ax = fig.add_subplot(1,1,1, projection=ccrs.Mercator(
+                    central_longitude=centerlon))
+        ax.gridlines(draw_labels=True)
+        buffer = .1
+        ax.set_extent([lonmin-buffer, lonmax+buffer,
+                       latmin-buffer, latmax+buffer],
+                      crs=ccrs.PlateCarree())
+        ax.add_feature(cfeature.NaturalEarthFeature(
+            'physical', 'land', '110m', edgecolor='black',
+            facecolor=cfeature.COLORS['land']))
+        for num, e in enumerate(f['ellipses']):
+            el = f['ellipses'][e]
+            lon = np.array(el['centerlon'])
+            lat = np.array(el['centerlat'])
+            minor_axis = el['ellipsis_minor_axis']
+            major_axis = el['ellipsis_major_axis']
+            angle = el['ellipsis_major_axis_azimuth_angle']
+            xy = ccrs.Mercator().transform_points(
+                ccrs.PlateCarree(), lon, lat)[0]
+            ax.add_patch(mpatches.Ellipse(
+                xy=[xy[0], xy[1]],
+                height=major_axis*10, width=minor_axis*10,
+                angle=-angle, fill=False,
+                color='k', alpha=1,
+                transform=ccrs.Mercator(), zorder=30))
+            ax.plot(lon, lat, '*k', zorder=50,
+                    transform=ccrs.Geodetic())
+
+        for cluster in f['clusters']:
+            c = f['clusters'][cluster]
+            if len(c['members'])>1:
+                # Plot each cluster, if more than one member
+                xy = ccrs.Mercator().transform_points(
+                        ccrs.PlateCarree(),
+                        np.array(c['centerlon']),
+                        np.array(c['centerlat']))[0]
+                ax.add_patch(mpatches.Circle(
+                    xy=xy, radius= 3*(c['longest_ellipsis_axis'] + 
+                        np.mean(c['distance_from_cluster_centre'])),
+                    fill=False, color='r', lw=2,
+                    transform=ccrs.Mercator(), zorder=50))
+
+        if simulationcollection is not None:
+            for s in simulationcollection.simulations:
+                ax.plot(s.lon[:,ti], s.lat[:,ti], '.',
+                        transform=ccrs.Geodetic())
+            
+        plt.show()
+
+def haversine(lon1, lat1, lon2, lat2):
+    ''' Calculate the great circle distance between two points'''
+    
+    lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+    # haversine formula 
+    dlon = lon2 - lon1 
+    dlat = lat2 - lat1 
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    c = 2 * asin(sqrt(a)) 
+    r = 6371000 # Radius of earth in m
+    return c * r
 
 def get_ellipse(lons, lats):
     '''Calculate best-fit ellipse for a cloud of lon,lat positions'''
@@ -64,12 +146,18 @@ def get_ellipse(lons, lats):
         major = 0
     major_axis = np.sqrt(eigvals)[major]
     minor_axis = np.sqrt(eigvals)[1-major]
-    angle = np.degrees(np.math.atan2(eigvecs[1][major],
+    angle = 270 - np.degrees(np.math.atan2(eigvecs[1][major],
                                      eigvecs[1][1-major]))
     if major == 1:
         angle = -angle
-    return major_axis, minor_axis, angle
 
+    # Make azimuth angle between -180 and +180
+    angle = angle % 360
+    angle = (angle + 360) % 360
+    if angle > 180:
+        angle -= 360
+
+    return major_axis, minor_axis, angle
 
 # To encode JSON
 class MyEncoder(json.JSONEncoder):
@@ -81,6 +169,7 @@ class MyEncoder(json.JSONEncoder):
 
 
 class Simulation():
+    '''Containing data for a single simulation'''
 
     def __init__(self, filename):
         print('Importing: ' + filename)
@@ -146,6 +235,7 @@ class Simulation():
         self.distance = np.array(self.distance)
 
     def get_ellipses(self):
+        '''Get best-fit-ellipsis for each timestep of a simulation'''
         self.major_axis = np.ones(self.num_timesteps)
         self.minor_axis = np.ones(self.num_timesteps)
         self.angle = np.ones(self.num_timesteps)
@@ -155,27 +245,20 @@ class Simulation():
         self.area = np.pi*self.major_axis*self.minor_axis/4
 
     def plot_timestep(self, ax, i):
+        '''Plot timestep of a simulation'''
         x = self.x[:,i]
         y = self.y[:,i]
         ax.plot(x, y, '.', color=self.color,
                 alpha=.1, markeredgewidth=0)
-        #for val, vec in zip(eigvals, eigvecs.T):
-        #    val*=2
-        #    val = np.sqrt(val)
-        #    xv, yv = np.vstack((center + val*vec, center,
-        #                        center - val*vec)).T
-        #    ax.plot(xv,yv, 'b-', lw=3)
         ellipse = patches.Ellipse(
             (x.mean(), y.mean()),
-            3*self.major_axis[i], 3*self.minor_axis[i],
-            angle=self.angle[i], linewidth=2, fill=False,
+            3*self.minor_axis[i], 3*self.major_axis[i],
+            angle=-self.angle[i], linewidth=2, fill=False,
             zorder=10, color=self.color)
-        #import pdb; pdb.set_trace()
         ax.add_patch(ellipse)
         ax.plot([self.x[:,0].mean(), x.mean()],
                 [self.y[:,0].mean(), y.mean()], color=self.color,
                 label=self.label)
-
         ax.legend()
 
     def json_summary(self):
@@ -186,7 +269,7 @@ class Simulation():
              'number_of_times': len(self.times)}
         return s
 
-    def get_analysis_geojson(self, filename=None):
+    def write_point_geojson(self, filename=None):
 
         pg = {'type': 'FeatureCollection',
               'properties': self.json_summary(),
@@ -194,7 +277,10 @@ class Simulation():
 
         # Temporarily add hardoded forcing names
         pg['properties']['modelName'] = self.model
-        pg['properties']['requestID'] = self.requestID
+        try:
+            pg['properties']['requestID'] = self.noosID
+        except:
+            pg['properties']['requestID'] = 'requestID'
         pg['properties']['wind_forcing'] = self.wind
         pg['properties']['ocean_forcing'] = self.current
 
@@ -229,33 +315,37 @@ class Simulation():
             with open(filename, 'w') as outfile:
                 json.dump(pg, outfile, cls=MyEncoder, indent=2)
 
-        return pg
+        major_axis = [f['ellipsis_major_axis']
+                        for f in pg['features']]
+
+        return pg, major_axis, minor_axis
 
     def __repr__(self):
         return 'Simulation: ' + self.filename
 
 
 class SimulationCollection():
-
-    colors = ['r', 'g', 'b', 'm', 'y', 'k']
+    '''Contains a collection of individual trajectory simulations'''
 
     def __init__(self, *simulations):
 
-        simulations = [Simulation(s) if isinstance(s, str) else s for s in simulations[0]]
-            
+        simulations = [Simulation(s) if isinstance(s, str) else s
+                        for s in simulations[0]]
         self.simulations = simulations
 
         self.lonmin = min([s.lonmin for s in self.simulations])
-        self.lonmax = min([s.lonmax for s in self.simulations])
+        self.lonmax = max([s.lonmax for s in self.simulations])
         self.latmin = min([s.latmin for s in self.simulations])
-        self.latmax = min([s.latmin for s in self.simulations])
-        self.centerlon = np.mean([s.lon[:,0].mean() for s in self.simulations])
-        self.centerlat = np.mean([s.lat[:,0].mean() for s in self.simulations])
+        self.latmax = max([s.latmax for s in self.simulations])
+        self.centerlon = np.mean([s.lon.mean()
+            for s in self.simulations])
+        self.centerlat = np.mean([s.lat.mean()
+            for s in self.simulations])
         self.proj = pyproj.Proj(
             '+proj=stere +lat_0=%f +lat_ts=%f +lon_0=%s' %
             (self.centerlat, self.centerlat, self.centerlon))
         for i, s in enumerate(self.simulations):
-            s.color = self.colors[i]  
+            s.color = colors[i]
             s.x, s.y = self.proj(s.lon, s.lat)
             s.x = np.ma.masked_where(s.lon.mask==1, s.x)
             s.y = np.ma.masked_where(s.lon.mask==1, s.y)
@@ -271,76 +361,92 @@ class SimulationCollection():
 
         self.num_timesteps = self.simulations[0].num_timesteps
 
-    def get_clusters(self, outfile):
+    def mme_analysis(self, outfile):
+        '''Perform multi-model-ensemble analysis of simulations'''
 
-        colors = ['r', 'g', 'b', 'y', 'm', 'k']
+        # Dictionary to be written to JSON file
+        # Adding first some overview data
         pg = {'type': 'FeatureCollection',
               'simulations': {},
+              'coverage': {
+                    'lonmin': self.lonmin,
+                    'lonmax': self.lonmax,
+                    'latmin': self.latmin,
+                    'latmax': self.latmax,
+                    'centerlon': self.centerlon,
+                    'centerlat': self.centerlat,
+                    },
               'features': []}
 
+        # Generating a string reference for each model:
+        # ModelName-CurrentName-WindName
         for i,s in enumerate(self.simulations):
             pg['simulations'][i] = '%s-%s-%s' % (
                                     s.model, s.current, s.wind)
         
-        for i in range(2, self.num_timesteps, 1):
-
-            pg['features'].append({
+        # Adding then some data for each timestep
+        for i in range(0, self.num_timesteps, 1):
+            tf = {
                 'time': s.times[i].isoformat('T')+'Z',
+                'ellipses': {},
                 'clusters': {}
-                })
+                }
 
+            # Find clusters
             X = [ [s.centerlon[i], s.centerlat[i]]
                     for s in self.simulations]
             X = np.array(X)
-            # Add perturbation
-            X = np.concatenate((X, X[-1,np.newaxis] + .001*np.ones(2,)), axis=0)
-            X = np.concatenate((X, X[-1,np.newaxis] + .0005*np.ones(2,)), axis=0)
-
-            ms = MeanShift()
-            ms = MeanShift(bandwidth=.005)
+            ms = MeanShift(bandwidth=.08)
             ms.fit(X)
             labels = ms.labels_
-            print(labels)
             cluster_centers = ms.cluster_centers_
-            print(cluster_centers)
             n_clusters_ = len(np.unique(labels))
-            print("Number of estimated clusters:", n_clusters_)
 
+            for c, s in enumerate(self.simulations):
+                tf['ellipses'][c] = {
+                    'ellipsis_major_axis': s.major_axis[i],
+                    'ellipsis_minor_axis': s.minor_axis[i],
+                    'centerlon': s.centerlon[i],
+                    'centerlat': s.centerlat[i],
+                    'ellipsis_major_axis_azimuth_angle': s.angle[i]}
             for c in range(n_clusters_):
-                members = np.where(labels == c)[0]
-                print '%s: %s' % (c, members)
-                cluster = {'members': members.tolist(),
-                           'centerlon': cluster_centers[c][0],
-                           'centerlat': cluster_centers[c][1]}
-                #pg['features'][-1]['clusters'][c]['members'] = members.tolist()
-                pg['features'][-1]['clusters'][c] = cluster
+                members = np.where(labels == c)[0].tolist()
+                tf['clusters'][c] = {
+                    'members': members,
+                    'memberlons': [self.simulations[sn].centerlon[i]
+                                    for sn in members],
+                    'memberlats': [self.simulations[sn].centerlat[i]
+                                    for sn in members],
+                    'centerlon': cluster_centers[c][0],
+                    'centerlat': cluster_centers[c][1]}
 
-            #for j in range(len(X)):
-            #    print(X[j][0], X[j][1], 'XY')
-            #    print(colors[labels[j]])
-            #    plt.plot(X[j][0], X[j][1],
-            #             colors[labels[j]] + '*',
-            #             markersize=10)
+                distance_from_centre = [
+                    haversine(tf['clusters'][c]['memberlons'][j],
+                              tf['clusters'][c]['memberlats'][j],
+                              tf['clusters'][c]['centerlon'],
+                              tf['clusters'][c]['centerlat'])
+                    for j in range(len(members))]
+                distance_std = np.std(distance_from_centre)
+                tf['clusters'][c]['distance_from_cluster_centre'] = \
+                    distance_from_centre
+                tf['clusters'][c]['distance_std'] = distance_std
+                longest_axis = 0
+                for j in members:
+                    longest_axis = np.maximum(longest_axis,
+                        tf['ellipses'][j]['ellipsis_major_axis'])
+                tf['clusters'][c]['longest_ellipsis_axis'] = \
+                    longest_axis
 
-            #plt.scatter(cluster_centers[:,0],cluster_centers[:,1],
-            #            marker="x",color='k', s=150,
-            #            linewidths=5, zorder=10)
+            pg['features'].append(tf)
 
-            #plt.title(i)
-            #plt.xlabel('Longitude')
-            #plt.ylabel('Latitude')
-            #plt.axis('scaled')
-            #plt.show()
-
-        print('Clusters')
-        print(pg)
-
+        # Write output of MME analysis to JSON file
         if outfile is not None:
             with open(outfile, 'w') as of:
                 json.dump(pg, of, cls=MyEncoder, indent=2)
 
     def plot(self):
-        for i in range(5, self.num_timesteps, 8):
+        '''Plotting a simulation collection'''
+        for i in range(0, self.num_timesteps, 1):
             fig, ax = plt.subplots() 
             ax.axis('equal')
             ax.set_xlabel('Distance [m]')
@@ -353,19 +459,8 @@ class SimulationCollection():
             plt.title('Duration: ' + str(s.times[i] - s.times[0]))
             plt.show()
 
-    def plot_center(self):
-        
-        for i in [10, 20]:
-            for s in self.simulations:
-                plt.plot(s.centerlon, s.centerlat, label='%12s%12s%12s\n' % (s.model, s.current, s.wind))
-                plt.plot(s.centerlon[i], s.centerlat[i], '*')
-            
-            plt.legend()
-            plt.show()
-            
- 
     def plot_metrics(self):
-
+        '''Plotting some scalar metrics of a simulation collection'''
         fig, (axdist, axazimuth, axarea) = plt.subplots(3)
 
         for s in self.simulations:
@@ -385,51 +480,6 @@ class SimulationCollection():
 
         plt.show()
 
-    def write_geojson(self, filename):
-        '''Obsolete, as this will be plotted from axes and angle'''
-        for s in self.simulations:
-            print(s)
-            print(dir(s))
-            print(s.times)
-            for i in range(0, 3):
-                print(s.times[i])
-                lon = s.lon[:,i]
-                lat = s.lat[:,i]
-                localproj = pyproj.Proj(
-                    '+proj=stere +lat_0=%f +lat_ts=%f +lon_0=%s' %
-                    (lat.mean(), lat.mean(), lon.mean()))
-                x, y = localproj(lon, lat, inverse=False)
-                #major_axis, minor_axis, angle, localproj = \
-                #    get_ellipse(lon, lat)
-                #s.get_ellipses()
-                print(s.major_axis)
-                ellipse = patches.Ellipse((x.mean(), y.mean()),
-                    3*s.major_axis[i], 3*s.minor_axis[i],
-                    angle=s.angle[i], linewidth=2, fill=False,
-                    zorder=10, color=s.color)
-                V = ellipse.get_verts()
-                X = V[:,0]
-                Y = V[:,1]
-                lonellipse,latellipse = localproj(X, Y, inverse=True)
-                plt.subplot(2,1,1)
-                plt.plot(lonellipse, latellipse, '*')
-                plt.subplot(2,1,2)
-                plt.plot(X, Y, '*')
-                plt.show()
-                print(X)
-                print(len(X))
-                print(latellipse)
-
-                polygonStr = '{"type": "Feature", "properties": { "model": "OpenDrift", "time": "20190619T120000Z", "area": 25012.2}, "geometry": { "type": "Polygon", "coordinates": [ ['
-
-                for p in range(len(X)):
-                    polygonStr = polygonStr + '[%f,%f],' % (
-                        lonellipse[p], latellipse[p])
-                polygonStr = polygonStr + '[%f,%f]]]}}' % (lonellipse[0], latellipse[0])
-
-                print(polygonStr)
-            stop
-
     def __repr__(self):
         r = 'NoosID: %s\n' % self.noosID
 
@@ -440,8 +490,8 @@ class SimulationCollection():
 
         return r
 
-if __name__ == '__main__':
 
+if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', dest='inputfolder',
@@ -459,57 +509,12 @@ if __name__ == '__main__':
     if not(os.path.exists(args.inputfolder)):
         sys.exit('Input folder does not exist: ' + args.inputfolder)
     if not(os.path.exists(args.outputfolder)):
-        print('Output folder does not exist, creating: ' + args.outputfolder)
+        print('Output folder does not exist, creating: ' +
+              args.outputfolder)
         try:
             os.mkdir(args.outputfolder)
         except:
-            sys.exit('Could not create output folder: ' + args.outputfolder)
+            sys.exit('Could not create output folder: ' +
+                     args.outputfolder)
 
     process_folder(args.inputfolder, args.outputfolder)
-
-    #simulation_files = glob.glob('./sample_simulations/*.nc')
-    #s = SimulationCollection(simulation_files)
-    #print s
-    #s.plot()
-    #s.plot_metrics()
-    #stop
-
-    #s1 = Simulation('sample_simulations/opendrift_oil_norway_rlw.nc')
-    ##s1.get_points_geojson(filename='noos_points.json')
-    #s1.get_analysis_geojson(filename='noosdrift_requestID_opendrift_cmems_nws7_ecmwf.json')
-
-    #s2 = Simulation('mothy_oil_france_rhw.nc')
-    #s3 = Simulation('mothy_oil_france_rhw_without_nws.nc')
-    #s = SimulationCollection(s1, s2, s3)
-
-    ##s1 = Simulation('opendrift_oil_norway_rlw.nc')
-    ##s2 = Simulation('mothy_oil_norway_rlw.nc')
-    ##s3 = Simulation('mothy_oil_norway_rlw_with_ibi.nc')
-    ##s4 = Simulation('mothy_oil_norway_rlw_with_psy4.nc')
-    ##s = SimulationCollection(s1, s2, s3, s4)
-    #print(s.simulations)
-    ##s.plot()
-    #s.plot_metrics()
-
-#    for sim in ['oil', 'sar']:
-#        for loc in ['france', 'belgium', 'norway']:
-#            for cas in ['rlw', 'rhw']:
-#                if cas != 'rlw' or sim != 'oil' or loc != 'norway':
-#                    continue
-#                files = glob.glob('../*%s_%s_%s*.nc' % (sim, loc, cas))
-#                files = [files[0], files[2]]  # Subset
-#                print(files)
-#                s = SimulationCollection(files)
-#                s.write_geojson('geojson.txt')
-#                stop
-#                #s.plot()
-#                #s.plot_metrics()
-#                #stop
-#                #from opendrift.models.openoil3D import OpenOil3D
-#                #o = opendrift.open(files[0])
-#                #label = [si.label for si in s.simulations]
-#                #o = OpenOil3D()
-#                #o.io_import_file(files[0])
-#                #o.animation(compare=files[1:], legend=label,
-#                #            filename='anim_%s_%s_%s.mp4' %
-#                #                (sim, loc, cas))
