@@ -230,7 +230,7 @@ class Simulation():
 
         # Determining current and wind source from filename
         # Would be better to have attributes in netCDF files
-        self.model = self.filename.split('_')[0].capitalize()
+        self.model = self.filename.split('_')[0].lower()
         self.current = 'cmems-nws1.5'
         if 'without_nws' in self.filename:
             self.current = 'tidal'
