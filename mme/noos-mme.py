@@ -29,14 +29,16 @@ def process_folder(inputfolder, outputfolder, noosID='requestID'):
     s = SimulationCollection(simulation_files)
     s.noosID = noosID
 
-    print('Performing MME-analysis')
-    s.mme_analysis(outfile='mme.json')
+    mmefile = outputfolder + 'mme.json'
+    print('Writing MME-analysis to file: %s' % mmefile)
+    s.mme_analysis(mmefile)
 
-    plot_mme_analysis(filename='mme.json', simulationcollection=s)
+    #plot_mme_analysis(filename=mmefile, simulationcollection=s)
 
     # Produce JSON file for each simulation
     print('Writing point JSON files for each simulation')
     for sim in s.simulations:
+        print('\t' + sim.filename)
         sim.write_point_geojson(filename = outputfolder +
             '/noosdrift_%s_%s_%s_%s.json' % (
             noosID, sim.model, sim.current, sim.wind))
@@ -104,6 +106,25 @@ def plot_mme_analysis(filename, simulationcollection=None):
                         np.mean(c['distance_from_cluster_centre'])),
                     fill=False, color='r', lw=2,
                     transform=ccrs.Mercator(), zorder=50))
+
+        # Plot embounding super-ellipse
+        se = f['super-ellipse']
+        lon = np.array(se['centerlon'])
+        lat = np.array(se['centerlat'])
+        minor_axis = se['ellipsis_minor_axis']
+        major_axis = se['ellipsis_major_axis']
+        angle = se['ellipsis_major_axis_azimuth_angle']
+        xy = ccrs.Mercator().transform_points(
+            ccrs.PlateCarree(), lon, lat)[0]
+        ax.add_patch(mpatches.Ellipse(
+            xy=[xy[0], xy[1]],
+            height=major_axis*10, width=minor_axis*10,
+            angle=-angle, fill=False,
+            linewidth=3,
+            color='k', alpha=1,
+            transform=ccrs.Mercator(), zorder=30))
+        ax.plot(lon, lat, '*k', zorder=50,
+                    transform=ccrs.Geodetic())
 
         if simulationcollection is not None:
             for s in simulationcollection.simulations:
@@ -210,19 +231,25 @@ class Simulation():
         # Determining current and wind source from filename
         # Would be better to have attributes in netCDF files
         self.model = self.filename.split('_')[0].capitalize()
-        self.current = 'NWS'
+        self.current = 'cmems-nws1.5'
         if 'without_nws' in self.filename:
-            self.current = 'TIDAL'
+            self.current = 'tidal'
         if 'with_ibi' in self.filename:
-            self.current = 'IBER'
+            self.current = 'cmems-ibi'
         if 'with_psy4' in self.filename:
-            self.current = 'MERC'
-        self.wind = 'ECMWF'
+            self.current = 'cmems-global'
+        self.wind = 'ecmwf'
         # Override with names from netCDF file, if existing
         if 'current_name' in attributes:
             self.current = attributes['current_name']
         if 'wind_name' in attributes:
             self.wind = attributes['wind_name']
+
+        if self.wind == 'ECMWF':
+            self.wind = 'ecmwf'
+        if self.wind == 'Topaz':
+            self.wind = 'topaz'
+
         self.label = '{0:<12}{1:<8}{2:<8}'.format(
                     self.model, self.current, self.wind)
 
@@ -263,9 +290,9 @@ class Simulation():
 
     def json_summary(self):
         '''Return some common JSON properties'''
-        s = {'TimeStep': '%sH' % (self.time_step.seconds/3600.),
-             'StartTime': self.times[0].isoformat('T')+'Z',
-             'EndTime': self.times[-1].isoformat('T')+'Z',
+        s = {'time_step': '%sH' % (self.time_step.seconds/3600.),
+             'start_time': self.times[0].isoformat('T')+'Z',
+             'end_time': self.times[-1].isoformat('T')+'Z',
              'number_of_times': len(self.times)}
         return s
 
@@ -276,7 +303,7 @@ class Simulation():
               'features': []}
 
         # Temporarily add hardoded forcing names
-        pg['properties']['modelName'] = self.model
+        pg['properties']['model_name'] = self.model
         try:
             pg['properties']['requestID'] = self.noosID
         except:
@@ -302,12 +329,12 @@ class Simulation():
                 'time': self.times[i].isoformat('T')+'Z',
                 'latitude_of_center': np.mean(lat),
                 'longitude_of_center': np.mean(lon),
-                'ellipsis_major_axis': np.round(major_axis, 2),
-                'ellipsis_minor_axis': np.round(minor_axis, 2),
-                'ellipsis_major_axis_azimuth_angle': np.round(angle, 2),
-                'distance_of_center_from_start': np.round(self.distance[i], 2),
+                'ellipsis_major_axis': major_axis,
+                'ellipsis_minor_axis': minor_axis,
+                'ellipsis_major_axis_azimuth_angle': angle,
+                'distance_of_center_from_start': self.distance[i],
                 'azimuth_direction_of_center_from_start':
-                    np.round(self.azimuth[i], 2),
+                    self.azimuth[i],
                 'geometry': {'type': 'MultiPoint',
                              'coordinates': coords}})
 
@@ -388,6 +415,7 @@ class SimulationCollection():
         for i in range(0, self.num_timesteps, 1):
             tf = {
                 'time': s.times[i].isoformat('T')+'Z',
+                'super-ellipse': {},
                 'ellipses': {},
                 'clusters': {}
                 }
@@ -396,19 +424,36 @@ class SimulationCollection():
             X = [ [s.centerlon[i], s.centerlat[i]]
                     for s in self.simulations]
             X = np.array(X)
-            ms = MeanShift(bandwidth=.08)
+            hours = (s.times[i]-s.times[0]).total_seconds()/3600.
+            distances = [haversine(s.centerlon[0], s.centerlat[0],
+                                   s.centerlon[i], s.centerlat[i])
+                         for s in self.simulations]
+            avg_distance = np.mean(distances)
+            bandwidth = .10 - .02*(avg_distance/30000.)
+            ms = MeanShift(bandwidth=bandwidth)
             ms.fit(X)
             labels = ms.labels_
             cluster_centers = ms.cluster_centers_
             n_clusters_ = len(np.unique(labels))
 
+            all_lons = np.array([])
+            all_lats = np.array([])
             for c, s in enumerate(self.simulations):
+                all_lons = np.concatenate((all_lons, s.lon[:,i]))
+                all_lats = np.concatenate((all_lats, s.lat[:,i]))
                 tf['ellipses'][c] = {
                     'ellipsis_major_axis': s.major_axis[i],
                     'ellipsis_minor_axis': s.minor_axis[i],
                     'centerlon': s.centerlon[i],
                     'centerlat': s.centerlat[i],
                     'ellipsis_major_axis_azimuth_angle': s.angle[i]}
+            all_major_axis, all_minor_axis, all_angle = \
+                get_ellipse(all_lons, all_lats)
+            tf['super-ellipse']['centerlon'] = np.mean(all_lons)
+            tf['super-ellipse']['centerlat'] = np.mean(all_lats)
+            tf['super-ellipse']['ellipsis_major_axis'] = all_major_axis
+            tf['super-ellipse']['ellipsis_minor_axis'] = all_minor_axis
+            tf['super-ellipse']['ellipsis_major_axis_azimuth_angle'] = all_angle
             for c in range(n_clusters_):
                 members = np.where(labels == c)[0].tolist()
                 tf['clusters'][c] = {
@@ -498,12 +543,14 @@ if __name__ == '__main__':
                         default='sample_simulations',
                         help='Folder with netCDF files from simulations')
     parser.add_argument('-o', dest='outputfolder',
-                        default='mme-output',
+                        default=None,
                         help='Folder with MME output')
 
     args = parser.parse_args()
 
     print('Input folder: ' + args.inputfolder)
+    if args.outputfolder is None:
+        args.outputfolder = args.inputfolder + '/mme_output/'
     print('Output folder: ' + args.outputfolder)
 
     if not(os.path.exists(args.inputfolder)):
