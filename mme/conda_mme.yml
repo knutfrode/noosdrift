@@ -1,0 +1,10 @@
+name: noosdrift-mme
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.7
+  - scikit-learn
+  - pyproj
+  - netCDF4
+  - matplotlib
+  - cartopy
