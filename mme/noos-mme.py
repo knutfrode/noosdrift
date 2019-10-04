@@ -247,8 +247,8 @@ class Simulation():
 
         if self.wind == 'ECMWF':
             self.wind = 'ecmwf'
-        if self.wind == 'Topaz':
-            self.wind = 'topaz'
+        if self.current == 'Topaz':
+            self.current = 'topaz'
 
         self.label = '{0:<12}{1:<8}{2:<8}'.format(
                     self.model, self.current, self.wind)
@@ -408,8 +408,8 @@ class SimulationCollection():
         # Generating a string reference for each model:
         # ModelName-CurrentName-WindName
         for i,s in enumerate(self.simulations):
-            pg['simulations'][i] = '%s-%s-%s' % (
-                                    s.model, s.current, s.wind)
+            pg['simulations'][i] = '%s_%s_%s' % (
+                                    s.model.lower(), s.current, s.wind)
         
         # Adding then some data for each timestep
         for i in range(0, self.num_timesteps, 1):
