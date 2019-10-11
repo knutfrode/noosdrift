@@ -104,7 +104,9 @@ def run_opendrift_simulation_request(request_json_file):
         seed_kwargs['oiltype'] = oil_type_mapping[drifter_name]
         o = OpenOil3D(weathering_model='noaa')
     elif j['drifter']['drifter_type'] == 'object':
-        seed_kwargs['objectType'] = drifter_name
+        seed_kwargs['objectType'] = int(drifter_name)
+        seed_kwargs['number'] = len(lats)
+        seed_kwargs['cone'] = False
         from opendrift.models.leeway import Leeway
         o = Leeway()
 
@@ -112,6 +114,7 @@ def run_opendrift_simulation_request(request_json_file):
     o.add_reader([current_reader, wind_reader])
 
     # Seed elements at requested time and positions
+    print(seed_kwargs)
     o.seed_elements(lons, lats, time=times, **seed_kwargs)
 
     # Run simulation, and save output to netCDF file
