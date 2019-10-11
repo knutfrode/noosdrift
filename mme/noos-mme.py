@@ -19,21 +19,32 @@ from matplotlib import patches
 from netCDF4 import Dataset, num2date
 from sklearn.cluster import MeanShift
 
-colors = ['r', 'g', 'b', 'm', 'y', 'k']
+colors = ['g', 'b', 'm', 'y', 'c']
 
 
-def process_folder(inputfolder, outputfolder, noosID='requestID'):
+def process_folder(inputfolder, outputfolder=None):
     '''Perform MME analysis of all simulations stored in a folder'''
 
     simulation_files = glob.glob(inputfolder + '/*.nc')
     s = SimulationCollection(simulation_files)
-    s.noosID = noosID
 
-    mmefile = outputfolder + 'mme.json'
+    try:
+        s.noosID = os.path.basename(s.simulations[1].filename).split('_')[1]
+    except:
+        s.noosID = 'requestID'
+
+    if outputfolder is None:
+        ourputfolder = inputfolder
+    mmefile = outputfolder + '/noosdrift_%s.json' % (s.noosID)
+    animfile = outputfolder + '/noosdrift_%s.mp4' % (s.noosID)
+    #animfile=None
+
     print('Writing MME-analysis to file: %s' % mmefile)
     s.mme_analysis(mmefile)
 
-    #plot_mme_analysis(filename=mmefile, simulationcollection=s)
+    animate_mme_analysis(filename=mmefile, animfile=animfile, simulationcollection=s)
+    stop
+    plot_mme_analysis(filename=mmefile, simulationcollection=s)
 
     # Produce JSON file for each simulation
     print('Writing point JSON files for each simulation')
@@ -42,6 +53,95 @@ def process_folder(inputfolder, outputfolder, noosID='requestID'):
         sim.write_point_geojson(filename = outputfolder +
             '/noosdrift_%s_%s_%s_%s.json' % (
             noosID, sim.model, sim.current, sim.wind))
+
+def animate_mme_analysis(filename, animfile=None, simulationcollection=None):
+
+    try:
+        import cartopy.crs as ccrs
+        import cartopy.feature as cfeature
+        import matplotlib.patches as mpatches
+        from matplotlib import animation
+    except:
+        raise ImportError('Please install Cartopy to make plots')
+
+    j = json.load(open(filename, 'r'))
+    lonmin = j['coverage']['lonmin']
+    lonmax = j['coverage']['lonmax']
+    latmin = j['coverage']['latmin']
+    latmax = j['coverage']['latmax']
+    centerlon = j['coverage']['centerlon']
+    centerlat = j['coverage']['centerlat']
+    times = np.arange(0, len(j['features']))
+
+    fig = plt.figure(figsize=(10., 10.))
+    ax = fig.add_subplot(1,1,1, projection=ccrs.Mercator(
+                central_longitude=centerlon))
+    ax.gridlines(draw_labels=True)
+    buffer = .1
+    ax.set_extent([lonmin-buffer, lonmax+buffer,
+                   latmin-buffer, latmax+buffer],
+                  crs=ccrs.PlateCarree())
+    ax.add_feature(cfeature.GSHHSFeature('high', edgecolor='black',
+        facecolor=cfeature.COLORS['land']))
+    #ax.add_feature(cfeature.NaturalEarthFeature(
+    #    'physical', 'land', '10m', edgecolor='black',
+    #    facecolor=cfeature.COLORS['land']))
+
+    def plot_timestep(i):
+        print(i)
+        for sn, si in enumerate(sim_list):
+            # Points
+            si['particles'].set_offsets(np.c_[
+                si['lon'][range(si['lon'].shape[0]), i],
+                si['lat'][range(si['lat'].shape[0]), i]])
+            ## Ellipses
+            f = j['features'][i]['ellipses'][str(sn)]
+            xy = ccrs.Mercator().transform_points(
+                ccrs.Geodetic(), np.array(f['centerlon']), np.array(f['centerlat']))[0]
+            si['ellipse'].set_center((xy[0], xy[1]))
+            si['ellipse'].height = f['ellipsis_major_axis']*8
+            si['ellipse'].width = f['ellipsis_minor_axis']*8
+            si['ellipse'].angle = -f['ellipsis_major_axis_azimuth_angle']
+        return si['particles'], si['ellipse']
+
+    if simulationcollection is not None:
+        num_sim = len(simulationcollection.simulations)
+        sim_list = [{}]*num_sim
+
+
+        for sn, sim in enumerate(simulationcollection.simulations):
+            if sn == 0:
+                ax.scatter(sim.lon[:,0], sim.lat[:,0], color='k', zorder=150,
+                           transform=ccrs.Geodetic(), label='initial position')
+            sim_list[sn] = {}
+            sd = sim_list[sn]  # pointer
+            sd['name'] = sim.label
+            sd['lon'] = sim.lon#.copy()
+            sd['lat'] = sim.lat#.copy()
+            # Plot points
+            sd['particles'] = ax.scatter(
+                [], [], color=sim.color,
+                transform=ccrs.Geodetic(),
+                label=sim.label, zorder=90)
+            # Plot bounding ellipse
+            # lokk
+            sd['ellipse'] = ax.add_patch(mpatches.Ellipse(
+                xy=[0, 0], height=0, width=0, angle=0, fill=False,
+                color='k', alpha=1, transform=ccrs.Mercator(), zorder=100))
+
+    anim = animation.FuncAnimation(plt.gcf(), plot_timestep, blit=False,
+                                   frames=len(times), interval=50)
+
+    plt.legend()
+
+    if animfile is None:
+        plt.show()
+    else:
+        print('Saving animation to: ' + animfile)
+        FFwriter=animation.FFMpegWriter(
+            fps=5, codec='libx264', bitrate=1800,
+            extra_args=['-profile:v', 'baseline', '-pix_fmt', 'yuv420p', '-an'])
+        anim.save(animfile, writer=FFwriter)
 
 def plot_mme_analysis(filename, simulationcollection=None):
     '''Import and plot the contents of a MME output JSON file'''
@@ -71,10 +171,13 @@ def plot_mme_analysis(filename, simulationcollection=None):
         buffer = .1
         ax.set_extent([lonmin-buffer, lonmax+buffer,
                        latmin-buffer, latmax+buffer],
-                      crs=ccrs.PlateCarree())
+                      crs=ccrs.Geodetic())
+        # Draw coastlines.
         ax.add_feature(cfeature.NaturalEarthFeature(
-            'physical', 'land', '110m', edgecolor='black',
+            'physical', 'land', '50m', edgecolor='black',
             facecolor=cfeature.COLORS['land']))
+        #ax.add_feature(cfeature.GSHHSFeature('high', edgecolor='black',
+        #                                     facecolor=cfeature.COLORS['land']))
         for num, e in enumerate(f['ellipses']):
             el = f['ellipses'][e]
             lon = np.array(el['centerlon'])
@@ -127,10 +230,16 @@ def plot_mme_analysis(filename, simulationcollection=None):
                     transform=ccrs.Geodetic())
 
         if simulationcollection is not None:
+            s = simulationcollection.simulations[0]
+            ax.plot(s.lon[:,0], s.lat[:,0], 'y.',
+                    transform=ccrs.Geodetic(),
+                    label='initial position')
             for s in simulationcollection.simulations:
                 ax.plot(s.lon[:,ti], s.lat[:,ti], '.',
-                        transform=ccrs.Geodetic())
+                        transform=ccrs.Geodetic(),
+                        label=s.label)
             
+        plt.legend()
         plt.show()
 
 def haversine(lon1, lat1, lon2, lat2):
@@ -230,15 +339,19 @@ class Simulation():
 
         # Determining current and wind source from filename
         # Would be better to have attributes in netCDF files
-        self.model = self.filename.split('_')[0].lower()
-        self.current = 'cmems-nws1.5'
-        if 'without_nws' in self.filename:
-            self.current = 'tidal'
-        if 'with_ibi' in self.filename:
-            self.current = 'cmems-ibi'
-        if 'with_psy4' in self.filename:
-            self.current = 'cmems-global'
-        self.wind = 'ecmwf'
+        shortname = os.path.basename(self.filename)
+        shortname = os.path.splitext(shortname)[0]
+        self.model = shortname.split('_')[2].lower()
+        self.current = 'Unknown'
+        self.current = shortname.split('_')[3].lower()
+        #if 'without_nws' in shortname:
+        #    self.current = 'tidal'
+        #if 'with_ibi' in shortname:
+        #    self.current = 'cmems-ibi'
+        #if 'with_psy4' in shortname:
+        #    self.current = 'cmems-global'
+        self.wind = 'Unknown'
+        self.wind = shortname.split('_')[4].lower()
         # Override with names from netCDF file, if existing
         if 'current_name' in attributes:
             self.current = attributes['current_name']
@@ -250,8 +363,9 @@ class Simulation():
         if self.current == 'Topaz':
             self.current = 'topaz'
 
-        self.label = '{0:<12}{1:<8}{2:<8}'.format(
-                    self.model, self.current, self.wind)
+        #self.label = '{0:<12}{1:<8}{2:<8}'.format(
+        #            self.model, self.current, self.wind)
+        self.label = '%-15s%-15s%-10s' % (self.model, self.current, self.wind)
 
         geod = pyproj.Geod(ellps='WGS84')
         res = [geod.inv(self.centerlon[0], self.centerlat[0],

@@ -24,11 +24,16 @@ def run_opendrift_simulation_request(request_json_file):
     }
 
     current_sources = {
-        'cmems_nws7': 'sample_forcing_data/nws_current_14Jul2019.nc',
-        'norkyst': 'sample_forcing_data/norkyst_current_14Jul2019.nc'}
+        'cmems_nws7_test': 'sample_forcing_data/nws_current_14Jul2019.nc',
+        'norkyst': 'http://thredds.met.no/thredds/dodsC/sea/norkyst800m/1h/aggregate_be',
+        'norkyst_test': 'sample_forcing_data/norkyst_current_14Jul2019.nc'
+        }
     wind_sources = {
-        'ecmwf': 'sample_forcing_data/ec_wind_14Jul2019.nc',
-        'arome': 'sample_forcing_data/arome_wind_14Jul2019.nc'}
+        'ecmwf': '/vol/vvfelles/opendrift/forcing_data/ecmwf/ecmwf_aggregate.nc',
+        'ecmwf_test': 'sample_forcing_data/ec_wind_14Jul2019.nc',
+        'arome': 'http://thredds.met.no/thredds/dodsC/meps25files/meps_det_extracted_2_5km_latest.nc',
+        'arome_test': 'sample_forcing_data/arome_wind_14Jul2019.nc'
+        }
 
     oil_type_mapping = {  # from Noos-name to OpenDrift oil name
         'gasoline': '*GENERIC GASOLINE',
@@ -60,6 +65,10 @@ def run_opendrift_simulation_request(request_json_file):
 
     file = open(request_json_file)
     j = json.load(file, object_pairs_hook=OrderedDict)
+
+    # Check output path
+    if 'output_path' not in j['simulation_description']:
+        j['simulation_description']['output_path'] = '.'
 
     # Read some parameters
     end_time = datetime.strptime(
@@ -116,6 +125,9 @@ def run_opendrift_simulation_request(request_json_file):
     # Seed elements at requested time and positions
     print(seed_kwargs)
     o.seed_elements(lons, lats, time=times, **seed_kwargs)
+
+    # config
+    o.set_config('drift:truncate_ocean_model_below_m', 4)
 
     # Run simulation, and save output to netCDF file
     resultfile = j['simulation_description']['output_path'] + \
