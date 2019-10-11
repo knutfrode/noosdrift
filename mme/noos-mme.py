@@ -5,6 +5,9 @@
 # by Knut-Frode Dagestad (MET Norway) 
 # Sept 2019
 
+import matplotlib
+matplotlib.use("TkAgg")
+
 import sys
 import argparse
 import os
@@ -13,13 +16,14 @@ from math import radians, cos, sin, asin, sqrt
 import json
 import pyproj
 import numpy as np
-import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib import patches
 from netCDF4 import Dataset, num2date
 from sklearn.cluster import MeanShift
 
-colors = ['g', 'b', 'm', 'y', 'c']
+
+colors = ['g', 'b', 'm', 'y', 'c', 'saddlebrown', 'deeppink',
+          'coral', 'darkgrey', 'lime']
 
 
 def process_folder(inputfolder, outputfolder=None):
@@ -83,31 +87,56 @@ def animate_mme_analysis(filename, animfile=None, simulationcollection=None):
                   crs=ccrs.PlateCarree())
     ax.add_feature(cfeature.GSHHSFeature('high', edgecolor='black',
         facecolor=cfeature.COLORS['land']))
-    #ax.add_feature(cfeature.NaturalEarthFeature(
-    #    'physical', 'land', '10m', edgecolor='black',
-    #    facecolor=cfeature.COLORS['land']))
 
     def plot_timestep(i):
         print(i)
+        feature = j['features'][i]
+        clusters = feature['clusters']
+        ellipses = feature['ellipses']
         for sn, si in enumerate(sim_list):
             # Points
             si['particles'].set_offsets(np.c_[
                 si['lon'][range(si['lon'].shape[0]), i],
                 si['lat'][range(si['lat'].shape[0]), i]])
-            ## Ellipses
-            f = j['features'][i]['ellipses'][str(sn)]
+            # Ellipses
+            f = ellipses[str(sn)]
             xy = ccrs.Mercator().transform_points(
                 ccrs.Geodetic(), np.array(f['centerlon']), np.array(f['centerlat']))[0]
             si['ellipse'].set_center((xy[0], xy[1]))
             si['ellipse'].height = f['ellipsis_major_axis']*8
             si['ellipse'].width = f['ellipsis_minor_axis']*8
             si['ellipse'].angle = -f['ellipsis_major_axis_azimuth_angle']
-        return si['particles'], si['ellipse']
+            # Clusters
+            #if sn < len(clusters):
+            if sn < len(clusters):
+                f = feature['clusters'][str(sn)]
+                xy = ccrs.Mercator().transform_points(
+                    ccrs.Geodetic(), np.array(f['centerlon']), np.array(f['centerlat']))[0]
+                radius = 3*(f['longest_ellipsis_axis'] +
+                            np.mean(f['distance_from_cluster_centre']))
+                if len(f['distance_from_cluster_centre']) <= 1:
+                    xy = (0, 0)
+                    radius = 0
+            else:
+                radius = 0
+                xy = (0, 0)
+            si['cluster'].set_center((xy[0], xy[1]))
+            si['cluster'].radius = radius
+
+        # Super-ellipse
+        f = feature['super-ellipse']
+        xy = ccrs.Mercator().transform_points(
+            ccrs.Geodetic(), np.array(f['centerlon']), np.array(f['centerlat']))[0]
+        si['super-ellipse'].set_center((xy[0], xy[1]))
+        si['super-ellipse'].height = f['ellipsis_major_axis']*8
+        si['super-ellipse'].width = f['ellipsis_minor_axis']*8
+        si['super-ellipse'].angle = -f['ellipsis_major_axis_azimuth_angle']
+
+        return si['particles'], si['ellipse'], si['super-ellipse'], si['cluster']
 
     if simulationcollection is not None:
         num_sim = len(simulationcollection.simulations)
         sim_list = [{}]*num_sim
-
 
         for sn, sim in enumerate(simulationcollection.simulations):
             if sn == 0:
@@ -124,15 +153,24 @@ def animate_mme_analysis(filename, animfile=None, simulationcollection=None):
                 transform=ccrs.Geodetic(),
                 label=sim.label, zorder=90)
             # Plot bounding ellipse
-            # lokk
             sd['ellipse'] = ax.add_patch(mpatches.Ellipse(
                 xy=[0, 0], height=0, width=0, angle=0, fill=False,
                 color='k', alpha=1, transform=ccrs.Mercator(), zorder=100))
+            # Plot cluster ellipse
+            sd['cluster'] = ax.add_patch(mpatches.Circle(
+                xy=[0, 0], radius=0, fill=False,
+                color='r', alpha=1, transform=ccrs.Mercator(), zorder=120))
+
+        # Plot super ellipse
+        sd['super-ellipse'] = ax.add_patch(mpatches.Ellipse(
+            xy=[0, 0], height=0, width=0, angle=0, fill=False,
+            linewidth=3,
+            color='k', alpha=1, transform=ccrs.Mercator(), zorder=200))
 
     anim = animation.FuncAnimation(plt.gcf(), plot_timestep, blit=False,
                                    frames=len(times), interval=50)
 
-    plt.legend()
+    plt.legend(loc='upper right')
 
     if animfile is None:
         plt.show()
