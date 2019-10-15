@@ -46,9 +46,9 @@ def process_folder(inputfolder, outputfolder=None):
     print('Writing MME-analysis to file: %s' % mmefile)
     s.mme_analysis(mmefile)
 
-    animate_mme_analysis(filename=mmefile, animfile=animfile, simulationcollection=s)
-    stop
-    plot_mme_analysis(filename=mmefile, simulationcollection=s)
+    #animate_mme_analysis(filename=mmefile, animfile=animfile, simulationcollection=s)
+    #stop
+    #plot_mme_analysis(filename=mmefile, simulationcollection=s)
 
     # Produce JSON file for each simulation
     print('Writing point JSON files for each simulation')
@@ -56,7 +56,7 @@ def process_folder(inputfolder, outputfolder=None):
         print('\t' + sim.filename)
         sim.write_point_geojson(filename = outputfolder +
             '/noosdrift_%s_%s_%s_%s.json' % (
-            noosID, sim.model, sim.current, sim.wind))
+            s.noosID, sim.model, sim.current, sim.wind))
 
 def animate_mme_analysis(filename, animfile=None, simulationcollection=None):
 
