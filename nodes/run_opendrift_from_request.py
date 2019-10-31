@@ -98,7 +98,7 @@ def run_opendrift_simulation_request(request_json_file):
     wind_reader = reader_netCDF_CF_generic.Reader(wind_URL)
 
     # Check that readers cover the requested time and area
-    lons,lats,times = noos_seed_from_json(j['initial_condition'])
+    lons,lats,depths,times = noos_seed_from_json(j['initial_condition'])
     if len(current_reader.covers_positions(
             lons.mean(), lats.mean())[0])==0:
         return_status_code(1,
@@ -127,7 +127,7 @@ def run_opendrift_simulation_request(request_json_file):
 
     # Seed elements at requested time and positions
     print(seed_kwargs)
-    o.seed_elements(lons, lats, time=times, **seed_kwargs)
+    o.seed_elements(lons, lats, z=depths, time=times, **seed_kwargs)
 
     # config
     o.set_config('drift:truncate_ocean_model_below_m', 4)
