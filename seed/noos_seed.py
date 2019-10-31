@@ -26,7 +26,8 @@ def noos_seed(lon, lat, time=None, z=None, number=1000, radius=0,
 
     if randgen is not None:
         np.random.seed(randgen)
-
+        
+    #Seeding - horizontal coordinates
     lon = np.atleast_1d(lon)
     lat = np.atleast_1d(lat)
     radius = np.atleast_1d(radius)
@@ -36,9 +37,6 @@ def noos_seed(lon, lat, time=None, z=None, number=1000, radius=0,
         lat = np.repeat(lat, 2)
     if len(radius) == 1:
         radius = np.repeat(radius, 2)
-    if time is not None:
-        if isinstance(time, datetime):
-            time = [time, time]
 
     geod = pyproj.Geod(ellps='WGS84')
     # Centerpoints of "cone":
@@ -46,6 +44,7 @@ def noos_seed(lon, lat, time=None, z=None, number=1000, radius=0,
                             number, radians=False)
     lon, lat = list(zip(*conelonlats))
     radius = np.linspace(radius[0], radius[1], number)
+
     # Perturbations
     x = np.random.randn(number)*radius.T
     y = np.random.randn(number)*radius.T
@@ -55,6 +54,29 @@ def noos_seed(lon, lat, time=None, z=None, number=1000, radius=0,
     
     lons, lats, az = geod.fwd(lon*ones, lat*ones,
                               azimuth, dist, radians=False)
+    
+    #Seeding vertical coordinates
+    depths = None
+    if z is None:
+       z = 0.0
+    z = np.atleast_1d(z)
+    if len(z) == 1:
+       z = np.repeat(z, 2)
+    depths = np.linspace(z[0], z[1], number)
+
+   
+    #Seeding time coordinates
+    times = None   
+    if time is not None:
+        if isinstance(time, datetime):
+            time = [time, time]    
+        #compute timegaps between 2 particles
+        dt = (time[1]-time[0]).total_seconds()/float(number)
+        #generate a datetime object for each release time
+        dts = dt*np.arange(number)
+        times = [(time[0] + timedelta(seconds=i)) for i in dts]
+    
+    
     if plot is True:
         import matplotlib.pyplot as plt
         plt.plot(lons, lats, '.')
@@ -66,7 +88,7 @@ def noos_seed(lon, lat, time=None, z=None, number=1000, radius=0,
             plt.title('%s - %s' % (time[0], time[-1]))
         plt.show() 
 
-    return lons, lats, time # Arrays of length *number*
+    return lons, lats, depths, times # Arrays of length *number*
 
 
 def noos_seed_from_json(json_source=None, plot=False):
@@ -84,16 +106,26 @@ def noos_seed_from_json(json_source=None, plot=False):
         seed = seed['initial_condition']
 
     t = seed['time']
-    if isinstance(t, list):
+    if isinstance(t, list) and len(t) == 2:
         time = [datetime.strptime(t[0], '%Y-%m-%dT%H:%M:%SZ'),
                 datetime.strptime(t[1], '%Y-%m-%dT%H:%M:%SZ')]
+    elif isinstance(t, list) and len(t) == 1:
+        time = [datetime.strptime(t[0], '%Y-%m-%dT%H:%M:%SZ'),
+                datetime.strptime(t[0], '%Y-%m-%dT%H:%M:%SZ')]
     else:
         time = datetime.strptime(t, '%Y-%m-%dT%H:%M:%SZ')
 
-    lons, lats, time = noos_seed(seed['lon'], seed['lat'],
+    try :
+      z = seed['z']
+    except:    
+      z = None
+
+
+    lons, lats, depths, times = noos_seed(seed['lon'], seed['lat'],
                                  number=seed['number'],
                                  radius=seed['radius'],
+                                 z=z,
                                  time=time,
                                  plot=plot)
 
-    return lons, lats, time
+    return lons, lats, depths, times
