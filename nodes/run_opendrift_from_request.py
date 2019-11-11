@@ -1,5 +1,8 @@
 #!/usr/bin/env python
 
+import matplotlib
+matplotlib.use('agg')
+
 import sys
 from datetime import datetime
 from collections import OrderedDict
@@ -57,7 +60,7 @@ def run_opendrift_simulation_request(request_json_file):
         if comment is not None:
             j['simulation_result']['comment'] = comment
             print(comment)
-        with open('out.json', 'w') as outfile:
+        with open(request_json_file, 'w') as outfile:
             json.dump(j, outfile, indent=2)
         sys.exit(status_code)
 
