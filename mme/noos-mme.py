@@ -13,7 +13,7 @@ import argparse
 import os
 import glob
 from math import radians, cos, sin, asin, sqrt
-import json
+import simplejson as json
 import pyproj
 import numpy as np
 import matplotlib.pyplot as plt
@@ -104,7 +104,7 @@ def animate_mme_analysis(filename, animfile=None, simulationcollection=None):
         :return:
         '''
 
-        print(i)
+        print('Animating timestep %i of %i' % (i, len(times)))
         feature = j['features'][i]
         clusters = feature['clusters']
         ellipses = feature['ellipses']
@@ -115,28 +115,30 @@ def animate_mme_analysis(filename, animfile=None, simulationcollection=None):
                 si['lat'][range(si['lat'].shape[0]), i]])
             # Ellipses
             f = ellipses[str(sn)]
-            xy = ccrs.Mercator().transform_points(
-                ccrs.Geodetic(), np.array(f['centerlon']), np.array(f['centerlat']))[0]
-            si['ellipse'].set_center((xy[0], xy[1]))
-            si['ellipse'].height = f['ellipsis_major_axis'] * 8
-            si['ellipse'].width = f['ellipsis_minor_axis'] * 8
-            si['ellipse'].angle = -f['ellipsis_major_axis_azimuth_angle']
-            # Clusters
-            #if sn < len(clusters):
-            if sn < len(clusters):
-                f = feature['clusters'][str(sn)]
+            if f['centerlon'] is not None:
                 xy = ccrs.Mercator().transform_points(
                     ccrs.Geodetic(), np.array(f['centerlon']), np.array(f['centerlat']))[0]
-                radius = 3 * (f['longest_ellipsis_axis'] +
-                              np.mean(f['distance_from_cluster_centre']))
-                if len(f['distance_from_cluster_centre']) <= 1:
-                    xy = (0, 0)
+                si['ellipse'].set_center((xy[0], xy[1]))
+                si['ellipse'].height = f['ellipsis_major_axis'] * 8
+                si['ellipse'].width = f['ellipsis_minor_axis'] * 8
+                si['ellipse'].angle = -f['ellipsis_major_axis_azimuth_angle']
+
+            # Clusters
+            if f['centerlon'] is not None:
+                if sn < len(clusters):
+                    f = feature['clusters'][str(sn)]
+                    xy = ccrs.Mercator().transform_points(
+                        ccrs.Geodetic(), np.array(f['centerlon']), np.array(f['centerlat']))[0]
+                    radius = 3 * (f['longest_ellipsis_axis'] +
+                                  np.mean(f['distance_from_cluster_centre']))
+                    if len(f['distance_from_cluster_centre']) <= 1:
+                        xy = (0, 0)
+                        radius = 0
+                else:
                     radius = 0
-            else:
-                radius = 0
-                xy = (0, 0)
-            si['cluster'].set_center((xy[0], xy[1]))
-            si['cluster'].radius = radius
+                    xy = (0, 0)
+                si['cluster'].set_center((xy[0], xy[1]))
+                si['cluster'].radius = radius
 
         # Super-ellipse
         f = feature['super-ellipse']
@@ -330,14 +332,20 @@ def get_ellipse(lons, lats):
     :return:
     '''
 
-    lons = lons[lons.mask==0]
-    lats = lats[lats.mask==0]
-    centerlon = np.mean(lons)
-    centerlat = np.mean(lats)
+    lons = lons[np.isfinite(lons)]
+    lats = lats[np.isfinite(lats)]
+    if len(lons) == 0:
+        lons = np.nan
+        lats = np.nan
+    centerlon = np.NaN if np.all(lons!=lons) else np.nanmean(lons)
+    if not np.isfinite(centerlon):
+        return np.nan, np.nan, np.nan
+    centerlat = np.nanmean(lats)
     localproj = pyproj.Proj(
                     '+proj=stere +lat_0=%f +lat_ts=%f +lon_0=%s' %
                     (centerlat, centerlat, centerlon))
     x, y = localproj(lons, lats)
+    #print(lons, x)
     centerx = x.mean()
     centery = y.mean()
     xy = np.row_stack((x, y))
@@ -361,6 +369,12 @@ def get_ellipse(lons, lats):
     if angle > 180:
         angle -= 360
 
+    if major_axis < 1e-10:
+        major_axis = 0
+    if minor_axis < 1e-10:
+        minor_axis = 0
+    if np.abs(angle) < 1e-10:
+        angle = 0
     return major_axis, minor_axis, angle
 
 # To encode JSON
@@ -470,7 +484,7 @@ class Simulation():
         self.azimuth[0] = 0
         self.distance = np.array(self.distance)
 
-    def get_ellipses(self):
+    def get_ellipses(self, pad=None):
         '''
         Get best-fit-ellipsis for each timestep of a simulation
 
@@ -483,6 +497,14 @@ class Simulation():
         for i in range(self.num_timesteps):
             self.major_axis[i], self.minor_axis[i], self.angle[i] = \
                 get_ellipse(self.lon[:,i], self.lat[:,i])
+
+        if pad is not None:
+            self.major_axis = np.pad(self.major_axis, (0, pad - self.num_timesteps),
+                                     'constant', constant_values=np.nan)
+            self.minor_axis = np.pad(self.minor_axis, (0, pad - self.num_timesteps),
+                                     'constant', constant_values=np.nan)
+            self.angle = np.pad(self.angle, (0, pad - self.num_timesteps),
+                                'constant', constant_values=np.nan)
         self.area = np.pi*self.major_axis*self.minor_axis/4
 
     def plot_timestep(self, ax, i):
@@ -544,35 +566,48 @@ class Simulation():
         for i in range(len(self.times)):
             lon = self.lon[:,i]
             lat = self.lat[:,i]
-            localproj = pyproj.Proj(
-                '+proj=stere +lat_0=%f +lat_ts=%f +lon_0=%s' %
-                (lat.mean(), lat.mean(), lon.mean()))
-            x, y = localproj(lon, lat, inverse=False)
-            major_axis, minor_axis, angle = get_ellipse(lon, lat)
+            lon = lon[np.isfinite(lon)]
+            lat = lat[np.isfinite(lat)]
+            if len(lon) > 0:
+                localproj = pyproj.Proj(
+                    '+proj=stere +lat_0=%f +lat_ts=%f +lon_0=%s' %
+                    (lat.mean(), lat.mean(), lon.mean()))
+                x, y = localproj(lon, lat, inverse=False)
+                major_axis, minor_axis, angle = get_ellipse(lon, lat)
 
-            # individual points
-            coords = [ [lo,la] for lo,la in
-                       zip(self.lon[:, i], self.lat[:, i]) ]
-            # Removing invalid coordinates (masked values in "lat" & "lon").
-            # Replacing masked value with 0 will likely give strange results
-            coords[:] = [coord for coord in coords if not (coord[0] > 180 or coord[1] > 90)]
+                # individual points
+                coords = [ [lo,la] for lo,la in
+                           zip(lon, lat) ]
+                # Removing invalid coordinates (masked values in "lat" & "lon").
+                # Replacing masked value with 0 will likely give strange results
+                coords[:] = [coord for coord in coords if not (coord[0] > 180 or coord[1] > 90)]
+                distance = self.distance[i]
+                azimuth = self.azimuth[i]
+            else:
+                lat = np.nan
+                lon = np.nan
+                major_axis = np.nan
+                minor_axis = np.nan
+                angle = np.nan
+                distance = np.nan
+                azimuth = np.nan
+                coords = []
 
             pg['features'].append({
                 'time': self.times[i].isoformat('T') + 'Z',
-                'latitude_of_center': np.mean(lat),
-                'longitude_of_center': np.mean(lon),
+                'latitude_of_center': np.nanmean(lat),
+                'longitude_of_center': np.nanmean(lon),
                 'ellipsis_major_axis': major_axis,
                 'ellipsis_minor_axis': minor_axis,
                 'ellipsis_major_axis_azimuth_angle': angle,
-                'distance_of_center_from_start': self.distance[i],
-                'azimuth_direction_of_center_from_start':
-                    self.azimuth[i],
+                'distance_of_center_from_start': distance,
+                'azimuth_direction_of_center_from_start': azimuth,
                 'geometry': {'type': 'MultiPoint',
                              'coordinates': coords}})
 
         if filename is not None:
             with open(filename, 'w') as outfile:
-                json.dump(pg, outfile, cls=MyEncoder, indent=2)
+                json.dump(pg, outfile, cls=MyEncoder, indent=2, ignore_nan=True)
 
         major_axis = [f['ellipsis_major_axis']
                       for f in pg['features']]
@@ -604,13 +639,49 @@ class SimulationCollection():
                        for s in simulations[0]]
         self.simulations = simulations
 
+        start_time = self.simulations[0].start_time
+        end_time = self.simulations[0].start_time
+        self.num_timesteps = self.simulations[0].num_timesteps
+        self.time = self.simulations[0].times
+        for i, s in enumerate(self.simulations):
+            if s.end_time > end_time:
+                end_time = s.end_time
+                self.time = s.times
+            if s.start_time != start_time:
+                raise ValueError('Simulations have different start times: %s and %s' %
+                                 (s.start_time, start_time))
+            if s.num_timesteps > self.num_timesteps:
+                self.num_timesteps = s.num_timesteps
+
+        # Pad simulations which are too short
+        for i, s in enumerate(self.simulations):
+            s.times = self.time
+            s.lon = np.ma.filled(s.lon)
+            s.lat = np.ma.filled(s.lat)
+            s.lon[s.lon>400] = np.nan
+            s.lat[s.lat>100] = np.nan
+            if s.num_timesteps < self.num_timesteps:
+                print('Padding short simulation (%i steps -> %i steps) : %s'
+                      % (s.num_timesteps, self.num_timesteps, s.filename))
+                s.lon = np.pad(s.lon, ((0, 0), (0, self.num_timesteps - s.num_timesteps)),
+                               'constant', constant_values=np.nan)
+                s.lat = np.pad(s.lat, ((0, 0), (0, self.num_timesteps - s.num_timesteps)),
+                                'constant', constant_values=np.nan)
+                s.lon[~np.isfinite(s.lon)] = np.nan
+                s.lat[~np.isfinite(s.lat)] = np.nan
+                np.warnings.filterwarnings('ignore')
+                s.lon[s.lon>400] = np.nan
+                s.lat[s.lat>100] = np.nan
+                s.centerlon = np.nanmean(s.lon, axis=0)
+                s.centerlat = np.nanmean(s.lat, axis=0)
+
         self.lonmin = min([s.lonmin for s in self.simulations])
         self.lonmax = max([s.lonmax for s in self.simulations])
         self.latmin = min([s.latmin for s in self.simulations])
         self.latmax = max([s.latmax for s in self.simulations])
-        self.centerlon = np.mean([s.lon.mean()
+        self.centerlon = np.nanmean([np.nanmean(s.lon)
                                   for s in self.simulations])
-        self.centerlat = np.mean([s.lat.mean()
+        self.centerlat = np.nanmean([np.nanmean(s.lat)
                                   for s in self.simulations])
         self.proj = pyproj.Proj(
             '+proj=stere +lat_0=%f +lat_ts=%f +lon_0=%s' %
@@ -618,10 +689,9 @@ class SimulationCollection():
         for i, s in enumerate(self.simulations):
             s.color = colors[i]
             s.x, s.y = self.proj(s.lon, s.lat)
-            s.x = np.ma.masked_where(s.lon.mask == 1, s.x)
-            s.y = np.ma.masked_where(s.lon.mask == 1, s.y)
-            s.get_ellipses()
-        self.time = s.times  # use time of last simulation
+            #s.x = np.ma.masked_where(s.lon.mask == 1, s.x)
+            #s.y = np.ma.masked_where(s.lon.mask == 1, s.y)
+            s.get_ellipses(pad=self.num_timesteps)
         self.hours = [(t - self.time[0]).total_seconds()/3600 for t in self.time]
         self.xmin = min([s.x.min() for s in self.simulations])
         self.xmax = max([s.x.max() for s in self.simulations])
@@ -630,7 +700,6 @@ class SimulationCollection():
         self.centerx = np.mean([np.mean(s.x) for s in self.simulations])
         self.centery = np.mean([np.mean(s.y) for s in self.simulations])
 
-        self.num_timesteps = self.simulations[0].num_timesteps
 
     def mme_analysis(self, outfile):
         '''
@@ -663,7 +732,7 @@ class SimulationCollection():
         # Adding then some data for each timestep
         for i in range(0, self.num_timesteps, 1):
             tf = {
-                'time': s.times[i].isoformat('T')+'Z',
+                'time': self.time[i].isoformat('T')+'Z',
                 'super-ellipse': {},
                 'ellipses': {},
                 'clusters': {}
@@ -671,25 +740,27 @@ class SimulationCollection():
 
             # Find clusters
             X = [ [s.centerlon[i], s.centerlat[i]]
-                    for s in self.simulations]
-            X = np.array(X)
-            hours = (s.times[i]-s.times[0]).total_seconds()/3600.
-            distances = [haversine(s.centerlon[0], s.centerlat[0],
-                                   s.centerlon[i], s.centerlat[i])
-                         for s in self.simulations]
-            avg_distance = np.mean(distances)
-            bandwidth = .10 - .02*(avg_distance/30000.)
-            ms = MeanShift(bandwidth=bandwidth)
-            ms.fit(X)
-            labels = ms.labels_
-            cluster_centers = ms.cluster_centers_
-            n_clusters_ = len(np.unique(labels))
+                   for s in self.simulations if np.isfinite(s.centerlon[i])]
+            if len(X) > 1:
+                X = np.array(X)
+                hours = (self.time[i]-self.time[0]).total_seconds()/3600.
+                distances = [haversine(s.centerlon[0], s.centerlat[0],
+                                       s.centerlon[i], s.centerlat[i])
+                             for s in self.simulations]
+                avg_distance = np.mean(distances)
+                bandwidth = .10 - .02*(avg_distance/30000.)
+                ms = MeanShift(bandwidth=bandwidth)
+                ms.fit(X)
+                labels = ms.labels_
+                cluster_centers = ms.cluster_centers_
+                n_clusters_ = len(np.unique(labels))
 
             all_lons = np.array([])
             all_lats = np.array([])
             for c, s in enumerate(self.simulations):
-                all_lons = np.concatenate((all_lons, s.lon[:,i]))
-                all_lats = np.concatenate((all_lats, s.lat[:,i]))
+                if i <= s.num_timesteps:
+                    all_lons = np.concatenate((all_lons, s.lon[:,i]))
+                    all_lats = np.concatenate((all_lats, s.lat[:,i]))
                 tf['ellipses'][c] = {
                     'ellipsis_major_axis': s.major_axis[i],
                     'ellipsis_minor_axis': s.minor_axis[i],
@@ -698,8 +769,8 @@ class SimulationCollection():
                     'ellipsis_major_axis_azimuth_angle': s.angle[i]}
             all_major_axis, all_minor_axis, all_angle = \
                 get_ellipse(all_lons, all_lats)
-            tf['super-ellipse']['centerlon'] = np.mean(all_lons)
-            tf['super-ellipse']['centerlat'] = np.mean(all_lats)
+            tf['super-ellipse']['centerlon'] = np.nanmean(all_lons)
+            tf['super-ellipse']['centerlat'] = np.nanmean(all_lats)
             tf['super-ellipse']['ellipsis_major_axis'] = all_major_axis
             tf['super-ellipse']['ellipsis_minor_axis'] = all_minor_axis
             tf['super-ellipse']['ellipsis_major_axis_azimuth_angle'] = all_angle
@@ -734,7 +805,7 @@ class SimulationCollection():
         # Write output of MME analysis to JSON file
         if outfile is not None:
             with open(outfile, 'w') as of:
-                json.dump(pg, of, cls=MyEncoder, indent=2)
+                json.dump(pg, of, cls=MyEncoder, indent=2, ignore_nan=True)
 
     def plot(self):
         '''

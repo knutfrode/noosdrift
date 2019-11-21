@@ -6,6 +6,7 @@ dependencies:
   - scikit-learn
   - pyproj
   - netCDF4
+  - simplejson
   - matplotlib
   - cartopy
   - ffmpeg
