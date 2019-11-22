@@ -1,39 +1,40 @@
 #!/usr/bin/env python
 
-# Multi-Model-Ensemble (MME) analysis tool 
+# Multi-Model-Ensemble (MME) analysis tool
 # developed within the Noos-Drift project
-# by Knut-Frode Dagestad (MET Norway) 
+# by Knut-Frode Dagestad (MET Norway)
 # Sept 2019
 
-import matplotlib
-matplotlib.use("TkAgg")
-
-import sys
 import argparse
-import os
 import glob
+import os
+import sys
 from math import radians, cos, sin, asin, sqrt
-import simplejson as json
-import pyproj
-import numpy as np
+
+import matplotlib
 import matplotlib.pyplot as plt
+import numpy as np
+import pyproj
+import simplejson as json
 from matplotlib import patches
 from netCDF4 import Dataset, num2date
 from sklearn.cluster import MeanShift
 
+matplotlib.use("TkAgg")
 
 colors = ['g', 'b', 'm', 'y', 'c', 'saddlebrown', 'deeppink',
           'coral', 'darkgrey', 'lime']
 
 
 def process_folder(inputfolder, outputfolder=None, animation=False):
-    '''Perform MME analysis of all simulations stored in a folder
+    """
+    Perform MME analysis of all simulations stored in a folder
 
     :param inputfolder:
     :param outputfolder:
     :param animation:
     :return:
-    '''
+    """
 
     simulation_files = glob.glob(inputfolder + '/*.nc')
     s = SimulationCollection(simulation_files)
@@ -45,30 +46,32 @@ def process_folder(inputfolder, outputfolder=None, animation=False):
 
     if outputfolder is None:
         outputfolder = inputfolder
-    mmefile = outputfolder + '/noosdrift_%s.json' % (s.noosID)
+    mmefile = outputfolder + '/noosdrift_%s.json' % s.noosID
 
     print('Writing MME-analysis to file: %s' % mmefile)
     s.mme_analysis(mmefile)
 
     if animation is not False:
-        animfile = outputfolder + '/noosdrift_%s.mp4' % (s.noosID)
+        animfile = outputfolder + '/noosdrift_%s.mp4' % s.noosID
         animate_mme_analysis(filename=mmefile, animfile=animfile, simulationcollection=s)
 
     # Produce JSON file for each simulation
     print('Writing point JSON files for each simulation')
     for sim in s.simulations:
         print('\t' + sim.filename)
-        sim.write_point_geojson(filename =
+        sim.write_point_geojson(filename=
                                 outputfolder + '/noosdrift_%s_%s_%s_%s.json' % (
-                                s.noosID, sim.model, sim.current, sim.wind))
+                                    sim.noosID, sim.model, sim.current, sim.wind))
+
 
 def animate_mme_analysis(filename, animfile=None, simulationcollection=None):
-    '''
+    """
+
     :param filename:
     :param animfile:
     :param simulationcollection:
     :return:
-    '''
+    """
 
     try:
         import cartopy.crs as ccrs
@@ -89,20 +92,21 @@ def animate_mme_analysis(filename, animfile=None, simulationcollection=None):
 
     fig = plt.figure(figsize=(10., 10.))
     ax = fig.add_subplot(1, 1, 1, projection=ccrs.Mercator(
-                         central_longitude=centerlon))
+        central_longitude=centerlon))
     ax.gridlines(draw_labels=True)
     buffer = .1
-    ax.set_extent([lonmin-buffer, lonmax+buffer,
-                   latmin-buffer, latmax+buffer],
+    ax.set_extent([lonmin - buffer, lonmax + buffer,
+                   latmin - buffer, latmax + buffer],
                   crs=ccrs.PlateCarree())
     ax.add_feature(cfeature.GSHHSFeature('high', edgecolor='black',
-                   facecolor=cfeature.COLORS['land']))
+                                         facecolor=cfeature.COLORS['land']))
 
     def plot_timestep(i):
-        '''
+        """
+
         :param i:
         :return:
-        '''
+        """
 
         print('Animating timestep %i of %i' % (i, len(times)))
         feature = j['features'][i]
@@ -111,8 +115,8 @@ def animate_mme_analysis(filename, animfile=None, simulationcollection=None):
         for sn, si in enumerate(sim_list):
             # Points
             si['particles'].set_offsets(np.c_[
-                si['lon'][range(si['lon'].shape[0]), i],
-                si['lat'][range(si['lat'].shape[0]), i]])
+                                            si['lon'][range(si['lon'].shape[0]), i],
+                                            si['lat'][range(si['lat'].shape[0]), i]])
             # Ellipses
             f = ellipses[str(sn)]
             if f['centerlon'] is not None:
@@ -162,8 +166,8 @@ def animate_mme_analysis(filename, animfile=None, simulationcollection=None):
             sim_list[sn] = {}
             sd = sim_list[sn]  # pointer
             sd['name'] = sim.label
-            sd['lon'] = sim.lon  #.copy()
-            sd['lat'] = sim.lat  #.copy()
+            sd['lon'] = sim.lon  # .copy()
+            sd['lat'] = sim.lat  # .copy()
             # Plot points
             sd['particles'] = ax.scatter(
                 [], [], color=sim.color,
@@ -198,14 +202,15 @@ def animate_mme_analysis(filename, animfile=None, simulationcollection=None):
             extra_args=['-profile:v', 'baseline', '-pix_fmt', 'yuv420p', '-an'])
         anim.save(animfile, writer=FFwriter)
 
+
 def plot_mme_analysis(filename, simulationcollection=None):
-    '''
+    """
     Import and plot the contents of a MME output JSON file
 
     :param filename:
     :param simulationcollection:
     :return:
-    '''
+    """
 
     try:
         import cartopy.crs as ccrs
@@ -227,7 +232,7 @@ def plot_mme_analysis(filename, simulationcollection=None):
         f = j['features'][ti]
         fig = plt.figure()
         ax = fig.add_subplot(1, 1, 1, projection=ccrs.Mercator(
-                    central_longitude=centerlon))
+            central_longitude=centerlon))
         ax.gridlines(draw_labels=True)
         buffer = .1
         ax.set_extent([lonmin - buffer, lonmax + buffer,
@@ -237,8 +242,8 @@ def plot_mme_analysis(filename, simulationcollection=None):
         ax.add_feature(cfeature.NaturalEarthFeature(
             'physical', 'land', '50m', edgecolor='black',
             facecolor=cfeature.COLORS['land']))
-        #ax.add_feature(cfeature.GSHHSFeature('high', edgecolor='black',
-        #                                     facecolor=cfeature.COLORS['land']))
+        # ax.add_feature(cfeature.GSHHSFeature('high', edgecolor='black',
+        #                                      facecolor=cfeature.COLORS['land']))
         for num, e in enumerate(f['ellipses']):
             el = f['ellipses'][e]
             lon = np.array(el['centerlon'])
@@ -262,12 +267,12 @@ def plot_mme_analysis(filename, simulationcollection=None):
             if len(c['members']) > 1:
                 # Plot each cluster, if more than one member
                 xy = ccrs.Mercator().transform_points(
-                        ccrs.PlateCarree(),
-                        np.array(c['centerlon']),
-                        np.array(c['centerlat']))[0]
+                    ccrs.PlateCarree(),
+                    np.array(c['centerlon']),
+                    np.array(c['centerlat']))[0]
                 ax.add_patch(mpatches.Circle(
-                    xy=xy, radius = 3 * (c['longest_ellipsis_axis'] + 
-                                         np.mean(c['distance_from_cluster_centre'])),
+                    xy=xy, radius=3 * (c['longest_ellipsis_axis'] +
+                                       np.mean(c['distance_from_cluster_centre'])),
                     fill=False, color='r', lw=2,
                     transform=ccrs.Mercator(), zorder=50))
 
@@ -282,29 +287,30 @@ def plot_mme_analysis(filename, simulationcollection=None):
             ccrs.PlateCarree(), lon, lat)[0]
         ax.add_patch(mpatches.Ellipse(
             xy=[xy[0], xy[1]],
-            height=major_axis*10, width=minor_axis*10,
+            height=major_axis * 10, width=minor_axis * 10,
             angle=-angle, fill=False,
             linewidth=3,
             color='k', alpha=1,
             transform=ccrs.Mercator(), zorder=30))
         ax.plot(lon, lat, '*k', zorder=50,
-                    transform=ccrs.Geodetic())
+                transform=ccrs.Geodetic())
 
         if simulationcollection is not None:
             s = simulationcollection.simulations[0]
-            ax.plot(s.lon[:,0], s.lat[:,0], 'y.',
+            ax.plot(s.lon[:, 0], s.lat[:, 0], 'y.',
                     transform=ccrs.Geodetic(),
                     label='initial position')
             for s in simulationcollection.simulations:
-                ax.plot(s.lon[:,ti], s.lat[:,ti], '.',
+                ax.plot(s.lon[:, ti], s.lat[:, ti], '.',
                         transform=ccrs.Geodetic(),
                         label=s.label)
-            
+
         plt.legend()
         plt.show()
 
+
 def haversine(lon1, lat1, lon2, lat2):
-    '''
+    """
     Calculate the great circle distance between two points
 
     :param lon1:
@@ -312,40 +318,40 @@ def haversine(lon1, lat1, lon2, lat2):
     :param lon2:
     :param lat2:
     :return:
-    '''
-    
+    """
+
     lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
-    # haversine formula 
-    dlon = lon2 - lon1 
-    dlat = lat2 - lat1 
-    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-    c = 2 * asin(sqrt(a)) 
-    r = 6371000 # Radius of earth in m
+    # haversine formula
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+    a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
+    c = 2 * asin(sqrt(a))
+    r = 6371000  # Radius of earth in m
     return c * r
 
+
 def get_ellipse(lons, lats):
-    '''
+    """
     Calculate best-fit ellipse for a cloud of lon,lat positions
     
     :param lons:
     :param lats:
     :return:
-    '''
+    """
 
     lons = lons[np.isfinite(lons)]
     lats = lats[np.isfinite(lats)]
     if len(lons) == 0:
         lons = np.nan
         lats = np.nan
-    centerlon = np.NaN if np.all(lons!=lons) else np.nanmean(lons)
+    centerlon = np.NaN if np.all(lons != lons) else np.nanmean(lons)
     if not np.isfinite(centerlon):
         return np.nan, np.nan, np.nan
     centerlat = np.nanmean(lats)
     localproj = pyproj.Proj(
-                    '+proj=stere +lat_0=%f +lat_ts=%f +lon_0=%s' %
-                    (centerlat, centerlat, centerlon))
+        '+proj=stere +lat_0=%f +lat_ts=%f +lon_0=%s' %
+        (centerlat, centerlat, centerlon))
     x, y = localproj(lons, lats)
-    #print(lons, x)
     centerx = x.mean()
     centery = y.mean()
     xy = np.row_stack((x, y))
@@ -356,10 +362,11 @@ def get_ellipse(lons, lats):
         major = 1
     else:
         major = 0
+
     major_axis = np.sqrt(eigvals)[major]
-    minor_axis = np.sqrt(eigvals)[1-major]
+    minor_axis = np.sqrt(eigvals)[1 - major]
     angle = 270 - np.degrees(np.math.atan2(eigvecs[1][major],
-                                     eigvecs[1][1-major]))
+                                           eigvecs[1][1 - major]))
     if major == 1:
         angle = -angle
 
@@ -377,19 +384,19 @@ def get_ellipse(lons, lats):
         angle = 0
     return major_axis, minor_axis, angle
 
-# To encode JSON
+
 class MyEncoder(json.JSONEncoder):
-    '''
+    """
     To encode JSON
 
-    '''
+    """
 
     def default(self, obj):
-        '''
-        
+        """
+
         :param obj:
         :return:
-        '''
+        """
 
         if isinstance(obj, np.floating):
             return np.round(float(obj), 4)
@@ -397,17 +404,17 @@ class MyEncoder(json.JSONEncoder):
             return super(MyEncoder, self).default(obj)
 
 
-class Simulation():
-    '''
+class Simulation:
+    """
     Containing data for a single simulation
 
-    '''
+    """
 
     def __init__(self, filename):
-        '''
+        """
 
         :param filename:
-        '''
+        """
 
         print('Importing: ' + filename)
 
@@ -434,14 +441,14 @@ class Simulation():
         self.centerlon = np.mean(self.lon, axis=0)
         self.centerlat = np.mean(self.lat, axis=0)
 
-        #attributes = infile.ncattrs()
+        # attributes = infile.ncattrs()
         attributes = infile.__dict__
 
         self.status = infile.variables['status'][:]
         self.status_categories = infile.variables['status'].flag_meanings.split()
-        #if 'stranded' not in self.status_categories:
+        # if 'stranded' not in self.status_categories:
         #    self.num_stranded = np.zeros(len(self.time_step))
-        #else:
+        # else:
         #    stranded_index = self.status_categories.index('stranded')*1
         #    self.num_stranded = np.sum(self.status==stranded_index, axis=0)
         infile.close()
@@ -453,11 +460,11 @@ class Simulation():
         self.model = shortname.split('_')[2].lower()
         self.current = 'Unknown'
         self.current = shortname.split('_')[3].lower()
-        #if 'without_nws' in shortname:
+        # if 'without_nws' in shortname:
         #    self.current = 'tidal'
-        #if 'with_ibi' in shortname:
+        # if 'with_ibi' in shortname:
         #    self.current = 'cmems-ibi'
-        #if 'with_psy4' in shortname:
+        # if 'with_psy4' in shortname:
         #    self.current = 'cmems-global'
         self.wind = 'Unknown'
         self.wind = shortname.split('_')[4].lower()
@@ -472,31 +479,30 @@ class Simulation():
         if self.current == 'Topaz':
             self.current = 'topaz'
 
-        #self.label = '{0:<12}{1:<8}{2:<8}'.format(
+        # self.label = '{0:<12}{1:<8}{2:<8}'.format(
         #            self.model, self.current, self.wind)
         self.label = '%-15s%-15s%-10s' % (self.model, self.current, self.wind)
 
         geod = pyproj.Geod(ellps='WGS84')
         res = [geod.inv(self.centerlon[0], self.centerlat[0],
-            lon, lat) for lon, lat in zip(self.centerlon, self.centerlat)]
+                        lon, lat) for lon, lat in zip(self.centerlon, self.centerlat)]
         self.azimuth, backaz, self.distance = zip(*res)
         self.azimuth = np.array(self.azimuth)
         self.azimuth[0] = 0
         self.distance = np.array(self.distance)
 
     def get_ellipses(self, pad=None):
-        '''
+        """
         Get best-fit-ellipsis for each timestep of a simulation
 
         :return:
-        '''
+        """
 
         self.major_axis = np.ones(self.num_timesteps)
         self.minor_axis = np.ones(self.num_timesteps)
         self.angle = np.ones(self.num_timesteps)
         for i in range(self.num_timesteps):
-            self.major_axis[i], self.minor_axis[i], self.angle[i] = \
-                get_ellipse(self.lon[:,i], self.lat[:,i])
+            self.major_axis[i], self.minor_axis[i], self.angle[i] = get_ellipse(self.lon[:, i], self.lat[:, i])
 
         if pad is not None:
             self.major_axis = np.pad(self.major_axis, (0, pad - self.num_timesteps),
@@ -505,19 +511,19 @@ class Simulation():
                                      'constant', constant_values=np.nan)
             self.angle = np.pad(self.angle, (0, pad - self.num_timesteps),
                                 'constant', constant_values=np.nan)
-        self.area = np.pi*self.major_axis*self.minor_axis/4
+        self.area = np.pi * self.major_axis * self.minor_axis / 4
 
     def plot_timestep(self, ax, i):
-        '''
+        """
         Plot timestep of a simulation
 
         :param ax:
         :param i:
         :return:
-        '''
+        """
 
-        x = self.x[:,i]
-        y = self.y[:,i]
+        x = self.x[:, i]
+        y = self.y[:, i]
         ax.plot(x, y, '.', color=self.color,
                 alpha=.1, markeredgewidth=0)
         ellipse = patches.Ellipse(
@@ -532,23 +538,24 @@ class Simulation():
         ax.legend()
 
     def json_summary(self):
-        '''
+        """
         Return some common JSON properties
-        :return:        
-        '''
 
-        s = {'time_step': '%sH' % (self.time_step.seconds/3600.),
-             'start_time': self.times[0].isoformat('T')+'Z',
-             'end_time': self.times[-1].isoformat('T')+'Z',
+        :return:
+        """
+
+        s = {'time_step': '%sH' % (self.time_step.seconds / 3600.),
+             'start_time': self.times[0].isoformat('T') + 'Z',
+             'end_time': self.times[-1].isoformat('T') + 'Z',
              'number_of_times': len(self.times)}
         return s
 
     def write_point_geojson(self, filename=None):
-        '''
-        
+        """
+
         :param filename:
         :return:
-        '''
+        """
 
         pg = {'type': 'FeatureCollection',
               'properties': self.json_summary(),
@@ -564,8 +571,8 @@ class Simulation():
         pg['properties']['ocean_forcing'] = self.current
 
         for i in range(len(self.times)):
-            lon = self.lon[:,i]
-            lat = self.lat[:,i]
+            lon = self.lon[:, i]
+            lat = self.lat[:, i]
             lon = lon[np.isfinite(lon)]
             lat = lat[np.isfinite(lat)]
             if len(lon) > 0:
@@ -576,8 +583,8 @@ class Simulation():
                 major_axis, minor_axis, angle = get_ellipse(lon, lat)
 
                 # individual points
-                coords = [ [lo,la] for lo,la in
-                           zip(lon, lat) ]
+                coords = [[lo, la] for lo, la in
+                          zip(lon, lat)]
                 # Removing invalid coordinates (masked values in "lat" & "lon").
                 # Replacing masked value with 0 will likely give strange results
                 coords[:] = [coord for coord in coords if not (coord[0] > 180 or coord[1] > 90)]
@@ -615,25 +622,25 @@ class Simulation():
         return pg, major_axis, minor_axis
 
     def __repr__(self):
-        '''
-        
+        """
+
         :return:
-        '''
+        """
 
         return 'Simulation: ' + self.filename
 
 
-class SimulationCollection():
-    '''
+class SimulationCollection:
+    """
     Contains a collection of individual trajectory simulations
 
-    '''
+    """
 
     def __init__(self, *simulations):
-        '''
-        
+        """
+
         :param simulations:
-        '''
+        """
 
         simulations = [Simulation(s) if isinstance(s, str) else s
                        for s in simulations[0]]
@@ -658,20 +665,20 @@ class SimulationCollection():
             s.times = self.time
             s.lon = np.ma.filled(s.lon)
             s.lat = np.ma.filled(s.lat)
-            s.lon[s.lon>400] = np.nan
-            s.lat[s.lat>100] = np.nan
+            s.lon[s.lon > 400] = np.nan
+            s.lat[s.lat > 100] = np.nan
             if s.num_timesteps < self.num_timesteps:
                 print('Padding short simulation (%i steps -> %i steps) : %s'
                       % (s.num_timesteps, self.num_timesteps, s.filename))
                 s.lon = np.pad(s.lon, ((0, 0), (0, self.num_timesteps - s.num_timesteps)),
                                'constant', constant_values=np.nan)
                 s.lat = np.pad(s.lat, ((0, 0), (0, self.num_timesteps - s.num_timesteps)),
-                                'constant', constant_values=np.nan)
+                               'constant', constant_values=np.nan)
                 s.lon[~np.isfinite(s.lon)] = np.nan
                 s.lat[~np.isfinite(s.lat)] = np.nan
                 np.warnings.filterwarnings('ignore')
-                s.lon[s.lon>400] = np.nan
-                s.lat[s.lat>100] = np.nan
+                s.lon[s.lon > 400] = np.nan
+                s.lat[s.lat > 100] = np.nan
                 s.centerlon = np.nanmean(s.lon, axis=0)
                 s.centerlat = np.nanmean(s.lat, axis=0)
 
@@ -680,19 +687,19 @@ class SimulationCollection():
         self.latmin = min([s.latmin for s in self.simulations])
         self.latmax = max([s.latmax for s in self.simulations])
         self.centerlon = np.nanmean([np.nanmean(s.lon)
-                                  for s in self.simulations])
+                                     for s in self.simulations])
         self.centerlat = np.nanmean([np.nanmean(s.lat)
-                                  for s in self.simulations])
+                                     for s in self.simulations])
         self.proj = pyproj.Proj(
             '+proj=stere +lat_0=%f +lat_ts=%f +lon_0=%s' %
             (self.centerlat, self.centerlat, self.centerlon))
         for i, s in enumerate(self.simulations):
             s.color = colors[i]
             s.x, s.y = self.proj(s.lon, s.lat)
-            #s.x = np.ma.masked_where(s.lon.mask == 1, s.x)
-            #s.y = np.ma.masked_where(s.lon.mask == 1, s.y)
+            # s.x = np.ma.masked_where(s.lon.mask == 1, s.x)
+            # s.y = np.ma.masked_where(s.lon.mask == 1, s.y)
             s.get_ellipses(pad=self.num_timesteps)
-        self.hours = [(t - self.time[0]).total_seconds()/3600 for t in self.time]
+        self.hours = [(t - self.time[0]).total_seconds() / 3600 for t in self.time]
         self.xmin = min([s.x.min() for s in self.simulations])
         self.xmax = max([s.x.max() for s in self.simulations])
         self.ymin = min([s.y.min() for s in self.simulations])
@@ -700,55 +707,54 @@ class SimulationCollection():
         self.centerx = np.mean([np.mean(s.x) for s in self.simulations])
         self.centery = np.mean([np.mean(s.y) for s in self.simulations])
 
-
     def mme_analysis(self, outfile):
-        '''
+        """
         Perform multi-model-ensemble analysis of simulations
 
         :param outfile:
         :return:
-        '''
+        """
 
         # Dictionary to be written to JSON file
         # Adding first some overview data
         pg = {'type': 'FeatureCollection',
               'simulations': {},
               'coverage': {
-                'lonmin': self.lonmin,
-                'lonmax': self.lonmax,
-                'latmin': self.latmin,
-                'latmax': self.latmax,
-                'centerlon': self.centerlon,
-                'centerlat': self.centerlat,
-                },
+                  'lonmin': self.lonmin,
+                  'lonmax': self.lonmax,
+                  'latmin': self.latmin,
+                  'latmax': self.latmax,
+                  'centerlon': self.centerlon,
+                  'centerlat': self.centerlat,
+              },
               'features': []}
 
         # Generating a string reference for each model:
         # ModelName-CurrentName-WindName
         for i, s in enumerate(self.simulations):
             pg['simulations'][i] = '%s_%s_%s' % (
-                                    s.model.lower(), s.current, s.wind)
-        
+                s.model.lower(), s.current, s.wind)
+
         # Adding then some data for each timestep
         for i in range(0, self.num_timesteps, 1):
             tf = {
-                'time': self.time[i].isoformat('T')+'Z',
+                'time': self.time[i].isoformat('T') + 'Z',
                 'super-ellipse': {},
                 'ellipses': {},
                 'clusters': {}
-                }
+            }
 
             # Find clusters
-            X = [ [s.centerlon[i], s.centerlat[i]]
-                   for s in self.simulations if np.isfinite(s.centerlon[i])]
+            X = [[s.centerlon[i], s.centerlat[i]]
+                 for s in self.simulations if np.isfinite(s.centerlon[i])]
             if len(X) > 1:
                 X = np.array(X)
-                hours = (self.time[i]-self.time[0]).total_seconds()/3600.
+                hours = (self.time[i] - self.time[0]).total_seconds() / 3600.
                 distances = [haversine(s.centerlon[0], s.centerlat[0],
                                        s.centerlon[i], s.centerlat[i])
                              for s in self.simulations]
                 avg_distance = np.mean(distances)
-                bandwidth = .10 - .02*(avg_distance/30000.)
+                bandwidth = .10 - .02 * (avg_distance / 30000.)
                 ms = MeanShift(bandwidth=bandwidth)
                 ms.fit(X)
                 labels = ms.labels_
@@ -759,16 +765,15 @@ class SimulationCollection():
             all_lats = np.array([])
             for c, s in enumerate(self.simulations):
                 if i <= s.num_timesteps:
-                    all_lons = np.concatenate((all_lons, s.lon[:,i]))
-                    all_lats = np.concatenate((all_lats, s.lat[:,i]))
+                    all_lons = np.concatenate((all_lons, s.lon[:, i]))
+                    all_lats = np.concatenate((all_lats, s.lat[:, i]))
                 tf['ellipses'][c] = {
                     'ellipsis_major_axis': s.major_axis[i],
                     'ellipsis_minor_axis': s.minor_axis[i],
                     'centerlon': s.centerlon[i],
                     'centerlat': s.centerlat[i],
                     'ellipsis_major_axis_azimuth_angle': s.angle[i]}
-            all_major_axis, all_minor_axis, all_angle = \
-                get_ellipse(all_lons, all_lats)
+            all_major_axis, all_minor_axis, all_angle = get_ellipse(all_lons, all_lats)
             tf['super-ellipse']['centerlon'] = np.nanmean(all_lons)
             tf['super-ellipse']['centerlat'] = np.nanmean(all_lats)
             tf['super-ellipse']['ellipsis_major_axis'] = all_major_axis
@@ -779,9 +784,9 @@ class SimulationCollection():
                 tf['clusters'][c] = {
                     'members': members,
                     'memberlons': [self.simulations[sn].centerlon[i]
-                                    for sn in members],
+                                   for sn in members],
                     'memberlats': [self.simulations[sn].centerlat[i]
-                                    for sn in members],
+                                   for sn in members],
                     'centerlon': cluster_centers[c][0],
                     'centerlat': cluster_centers[c][1]}
 
@@ -797,7 +802,7 @@ class SimulationCollection():
                 longest_axis = 0
                 for j in members:
                     longest_axis = np.maximum(longest_axis,
-                        tf['ellipses'][j]['ellipsis_major_axis'])
+                                              tf['ellipses'][j]['ellipsis_major_axis'])
                 tf['clusters'][c]['longest_ellipsis_axis'] = longest_axis
 
             pg['features'].append(tf)
@@ -808,37 +813,37 @@ class SimulationCollection():
                 json.dump(pg, of, cls=MyEncoder, indent=2, ignore_nan=True)
 
     def plot(self):
-        '''
+        """
         Plotting a simulation collection
 
         :return:
-        '''
+        """
 
         for i in range(0, self.num_timesteps, 1):
-            fig, ax = plt.subplots() 
+            fig, ax = plt.subplots()
             ax.axis('equal')
             ax.set_xlabel('Distance [m]')
             ax.set_ylabel('Distance [m]')
-            buffer = .2*(self.xmax-self.xmin)
-            ax.set_xlim([self.xmin-buffer, self.xmax+buffer])
-            ax.set_ylim([self.ymin-buffer, self.ymax+buffer])
+            buffer = .2 * (self.xmax - self.xmin)
+            ax.set_xlim([self.xmin - buffer, self.xmax + buffer])
+            ax.set_ylim([self.ymin - buffer, self.ymax + buffer])
             for s in self.simulations:
                 s.plot_timestep(ax, i)
             plt.title('Duration: ' + str(s.times[i] - s.times[0]))
             plt.show()
 
     def plot_metrics(self):
-        '''
+        """
         Plotting some scalar metrics of a simulation collection
 
         :return:
-        '''
+        """
 
         fig, (axdist, axazimuth, axarea) = plt.subplots(3)
 
         for s in self.simulations:
             axdist.plot(self.hours, s.distance / 1000.,
-                    s.color, label=s.label)
+                        s.color, label=s.label)
             axazimuth.plot(self.hours, s.azimuth, s.color)
             axarea.plot(self.hours, s.area / 1e6, s.color)
 
@@ -854,10 +859,10 @@ class SimulationCollection():
         plt.show()
 
     def __repr__(self):
-        '''
+        """
 
         :return:
-        '''
+        """
 
         r = 'NoosID: %s\n' % self.noosID
 
@@ -883,9 +888,16 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    if args.inputfolder is None:
+        sys.exit('Input folder not provided')
+    else:
+        args.inputfolder = args.inputfolder.rstrip('/')
     print('Input folder: ' + args.inputfolder)
+
     if args.outputfolder is None:
-        args.outputfolder = args.inputfolder + '/mme_output/'
+        args.outputfolder = args.inputfolder + '/mme_output'
+    else:
+        args.outputfolder = args.outputfolder.rstrip('/')
     print('Output folder: ' + args.outputfolder)
 
     if not (os.path.exists(args.inputfolder)):
