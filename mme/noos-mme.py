@@ -12,6 +12,7 @@ import sys
 from math import radians, cos, sin, asin, sqrt
 
 import matplotlib
+matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pyproj
@@ -20,7 +21,6 @@ from matplotlib import patches
 from netCDF4 import Dataset, num2date
 from sklearn.cluster import MeanShift
 
-matplotlib.use("TkAgg")
 
 colors = ['g', 'b', 'm', 'y', 'c', 'saddlebrown', 'deeppink',
           'coral', 'darkgrey', 'lime']
