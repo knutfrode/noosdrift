@@ -119,7 +119,7 @@ def animate_mme_analysis(filename, animfile=None, simulationcollection=None):
                                             si['lat'][range(si['lat'].shape[0]), i]])
             # Ellipses
             f = ellipses[str(sn)]
-            if f['centerlon'] is not None:
+            if f['centerlon'] is not None and si['ellipse'].height is not None and f['ellipsis_major_axis'] is not None and f['ellipsis_minor_axis'] is not None:
                 xy = ccrs.Mercator().transform_points(
                     ccrs.Geodetic(), np.array(f['centerlon']), np.array(f['centerlat']))[0]
                 si['ellipse'].set_center((xy[0], xy[1]))
@@ -127,17 +127,17 @@ def animate_mme_analysis(filename, animfile=None, simulationcollection=None):
                 si['ellipse'].width = f['ellipsis_minor_axis'] * 8
                 si['ellipse'].angle = -f['ellipsis_major_axis_azimuth_angle']
 
-            # Clusters
-            if f['centerlon'] is not None:
+                # Clusters
                 if sn < len(clusters):
                     f = feature['clusters'][str(sn)]
                     xy = ccrs.Mercator().transform_points(
                         ccrs.Geodetic(), np.array(f['centerlon']), np.array(f['centerlat']))[0]
-                    radius = 3 * (f['longest_ellipsis_axis'] +
-                                  np.mean(f['distance_from_cluster_centre']))
-                    if len(f['distance_from_cluster_centre']) <= 1:
+                    if len(f['distance_from_cluster_centre']) <= 1 or f['distance_from_cluster_centre'] is None:
                         xy = (0, 0)
                         radius = 0
+                    else:
+                        radius = 3 * (f['longest_ellipsis_axis'] +
+                                      np.mean(f['distance_from_cluster_centre']))
                 else:
                     radius = 0
                     xy = (0, 0)
@@ -341,9 +341,11 @@ def get_ellipse(lons, lats):
 
     lons = lons[np.isfinite(lons)]
     lats = lats[np.isfinite(lats)]
-    if len(lons) == 0:
-        lons = np.nan
-        lats = np.nan
+    #if len(lons) == 0:
+    #    lons = np.nan
+    #    lats = np.nan
+    if len(lons) <= 1:
+        return 0,0,0
     centerlon = np.NaN if np.all(lons != lons) else np.nanmean(lons)
     if not np.isfinite(centerlon):
         return np.nan, np.nan, np.nan
@@ -400,6 +402,8 @@ class MyEncoder(json.JSONEncoder):
 
         if isinstance(obj, np.floating):
             return np.round(float(obj), 4)
+        elif isinstance(obj, np.ma.core.MaskedConstant):
+            return None
         else:
             return super(MyEncoder, self).default(obj)
 
@@ -426,11 +430,10 @@ class Simulation:
         self.times = num2date(infile.variables['time'][:],
                               infile.variables['time'].units)
         self.start_time = self.times[0]
-        self.end_time = self.times[-1]
         self.time_step = self.times[1] - self.times[0]
         # Particles
         self.num_elements = len(infile.dimensions['trajectory'])
-        self.num_timesteps = len(infile.dimensions['time'])
+        #self.num_timesteps = len(infile.dimensions['time'])
 
         self.lon = infile.variables['lon'][:]
         self.lat = infile.variables['lat'][:]
@@ -438,8 +441,12 @@ class Simulation:
         self.lonmax = self.lon.max()
         self.latmin = self.lat.min()
         self.latmax = self.lat.max()
-        self.centerlon = np.mean(self.lon, axis=0)
-        self.centerlat = np.mean(self.lat, axis=0)
+        self.centerlon = np.nanmean(self.lon, axis=0)
+        self.centerlat = np.nanmean(self.lat, axis=0)
+        self.centerlon = np.ma.filled(self.centerlon, fill_value=np.nan)
+        self.centerlat = np.ma.filled(self.centerlat, fill_value=np.nan)
+        self.num_timesteps = sum(np.isfinite(self.centerlon))
+        self.end_time = self.times[self.num_timesteps-1]
 
         # attributes = infile.ncattrs()
         attributes = infile.__dict__
