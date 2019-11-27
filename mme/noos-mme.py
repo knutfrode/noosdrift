@@ -786,31 +786,32 @@ class SimulationCollection:
             tf['super-ellipse']['ellipsis_major_axis'] = all_major_axis
             tf['super-ellipse']['ellipsis_minor_axis'] = all_minor_axis
             tf['super-ellipse']['ellipsis_major_axis_azimuth_angle'] = all_angle
-            for c in range(n_clusters_):
-                members = np.where(labels == c)[0].tolist()
-                tf['clusters'][c] = {
-                    'members': members,
-                    'memberlons': [self.simulations[sn].centerlon[i]
-                                   for sn in members],
-                    'memberlats': [self.simulations[sn].centerlat[i]
-                                   for sn in members],
-                    'centerlon': cluster_centers[c][0],
-                    'centerlat': cluster_centers[c][1]}
+            if len(X) > 1:
+                for c in range(n_clusters_):
+                    members = np.where(labels == c)[0].tolist()
+                    tf['clusters'][c] = {
+                        'members': members,
+                        'memberlons': [self.simulations[sn].centerlon[i]
+                                       for sn in members],
+                        'memberlats': [self.simulations[sn].centerlat[i]
+                                       for sn in members],
+                        'centerlon': cluster_centers[c][0],
+                        'centerlat': cluster_centers[c][1]}
 
-                distance_from_centre = [
-                    haversine(tf['clusters'][c]['memberlons'][j],
-                              tf['clusters'][c]['memberlats'][j],
-                              tf['clusters'][c]['centerlon'],
-                              tf['clusters'][c]['centerlat'])
-                    for j in range(len(members))]
-                distance_std = np.std(distance_from_centre)
-                tf['clusters'][c]['distance_from_cluster_centre'] = distance_from_centre
-                tf['clusters'][c]['distance_std'] = distance_std
-                longest_axis = 0
-                for j in members:
-                    longest_axis = np.maximum(longest_axis,
-                                              tf['ellipses'][j]['ellipsis_major_axis'])
-                tf['clusters'][c]['longest_ellipsis_axis'] = longest_axis
+                    distance_from_centre = [
+                        haversine(tf['clusters'][c]['memberlons'][j],
+                                  tf['clusters'][c]['memberlats'][j],
+                                  tf['clusters'][c]['centerlon'],
+                                  tf['clusters'][c]['centerlat'])
+                        for j in range(len(members))]
+                    distance_std = np.std(distance_from_centre)
+                    tf['clusters'][c]['distance_from_cluster_centre'] = distance_from_centre
+                    tf['clusters'][c]['distance_std'] = distance_std
+                    longest_axis = 0
+                    for j in members:
+                        longest_axis = np.maximum(longest_axis,
+                                                  tf['ellipses'][j]['ellipsis_major_axis'])
+                    tf['clusters'][c]['longest_ellipsis_axis'] = longest_axis
 
             pg['features'].append(tf)
 
