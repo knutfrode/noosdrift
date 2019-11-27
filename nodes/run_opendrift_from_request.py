@@ -29,14 +29,14 @@ def run_opendrift_simulation_request(request_json_file):
     current_sources = {
         'cmems_nws7_test': 'sample_forcing_data/nws_current_14Jul2019.nc',
         'cmems-nws1.5': '/home/knutfd/Downloads/MetO-NWS-PHY-hi-CUR_1570820603923.nc',
-        'norkyst': 'http://thredds.met.no/thredds/dodsC/sea/norkyst800m/1h/aggregate_be',
-        'topaz': 'http://thredds.met.no/thredds/dodsC/topaz/dataset-topaz4-arc-unmasked-be',
+        'norkyst': 'https://thredds.met.no/thredds/dodsC/sea/norkyst800m/1h/aggregate_be',
+        'topaz': 'https://thredds.met.no/thredds/dodsC/topaz/dataset-topaz4-arc-unmasked-be',
         'norkyst_test': 'sample_forcing_data/norkyst_current_14Jul2019.nc'
         }
     wind_sources = {
         'ecmwf': '/vol/vvfelles/opendrift/forcing_data/ecmwf/ecmwf_aggregate.nc',
         'ecmwf_test': 'sample_forcing_data/ec_wind_14Jul2019.nc',
-        'arome': 'http://thredds.met.no/thredds/dodsC/meps25files/meps_det_extracted_2_5km_latest.nc',
+        'arome': 'https://thredds.met.no/thredds/dodsC/meps25files/meps_det_extracted_2_5km_latest.nc',
         'ncep': 'http://oos.soest.hawaii.edu/thredds/dodsC/hioos/model/atm/ncep_global/NCEP_Global_Atmospheric_Model_best.ncd',
         'arome_test': 'sample_forcing_data/arome_wind_14Jul2019.nc'
         }
