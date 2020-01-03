@@ -114,23 +114,27 @@ def run_opendrift_simulation_request(request_json_file):
     # Check if oil or leeway simulation
     seed_kwargs = {}
     drifter_name = j['drifter']['drifter_name']
+    logfile = request_json_file + '.log'
     if j['drifter']['drifter_type'] == 'oil':
         from opendrift.models.openoil3D import OpenOil3D
         seed_kwargs['oiltype'] = oil_type_mapping[drifter_name]
-        o = OpenOil3D(weathering_model='noaa')
+        seed_kwargs['z'] = depths
+        o = OpenOil3D(weathering_model='noaa', logfile=logfile)
     elif j['drifter']['drifter_type'] == 'object':
-        seed_kwargs['objectType'] = int(drifter_name)
+        print(drifter_name)
+        #seed_kwargs['objectType'] = drifter_name
+        print('WARNING: object type is hardcoded')
+        seed_kwargs['objectType'] = 1
         seed_kwargs['number'] = len(lats)
         seed_kwargs['cone'] = False
         from opendrift.models.leeway import Leeway
-        o = Leeway()
+        o = Leeway(logfile=logfile)
 
     # Adding readers
     o.add_reader([current_reader, wind_reader])
 
     # Seed elements at requested time and positions
-    print(seed_kwargs)
-    o.seed_elements(lons, lats, z=depths, time=times, **seed_kwargs)
+    o.seed_elements(lons, lats, time=times, **seed_kwargs)
 
     # config
     o.set_config('drift:truncate_ocean_model_below_m', 4)
@@ -146,8 +150,10 @@ def run_opendrift_simulation_request(request_json_file):
         # simulation is successful
         return_status_code(0, resultfile=resultfile)
     except SystemExit:
+        print('System exit')
         sys.exit(0)
-    except:
+    except Exception as e:
+        print('Exception:\n' + str(e))
         return_status_code(8)  # simulation failed
 
     # Save status to JSON file
