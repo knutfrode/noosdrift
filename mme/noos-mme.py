@@ -649,9 +649,22 @@ class SimulationCollection:
         :param simulations:
         """
 
-        simulations = [Simulation(s) if isinstance(s, str) else s
-                       for s in simulations[0]]
-        self.simulations = simulations
+        #simulations = [Simulation(s) if isinstance(s, str) else s
+        #               for s in simulations[0]]
+        sims = []
+        for s in simulations[0]:
+            if isinstance(s, str):
+                try:
+                    sim = Simulation(s)
+                except Exception as e:
+                    print('Could not import ' + s)
+                    print(e)
+                    sim = None
+            else:
+                sim = s
+            if sim is not None:
+                sims.append(sim)
+        self.simulations = sims
 
         start_time = self.simulations[0].start_time
         end_time = self.simulations[0].start_time
@@ -760,7 +773,7 @@ class SimulationCollection:
                 distances = [haversine(s.centerlon[0], s.centerlat[0],
                                        s.centerlon[i], s.centerlat[i])
                              for s in self.simulations]
-                avg_distance = np.mean(distances)
+                avg_distance = np.nanmean(distances)
                 bandwidth = .10 - .02 * (avg_distance / 30000.)
                 ms = MeanShift(bandwidth=bandwidth)
                 ms.fit(X)

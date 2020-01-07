@@ -4,10 +4,12 @@ import matplotlib
 matplotlib.use('agg')
 
 import sys
+import os
 from datetime import datetime
 from collections import OrderedDict
 import json
 from opendrift.readers import reader_netCDF_CF_generic
+from opendrift.readers import reader_cmems
 from noosdrift.seed.noos_seed import noos_seed, noos_seed_from_json
 
 
@@ -28,13 +30,14 @@ def run_opendrift_simulation_request(request_json_file):
 
     current_sources = {
         'cmems_nws7_test': 'sample_forcing_data/nws_current_14Jul2019.nc',
-        'cmems-nws1.5': '/home/knutfd/Downloads/MetO-NWS-PHY-hi-CUR_1570820603923.nc',
+        'cmems-nws1.5': 'NORTHWESTSHELF_ANALYSIS_FORECAST_PHY_004_013-TDS',
         'norkyst': 'https://thredds.met.no/thredds/dodsC/sea/norkyst800m/1h/aggregate_be',
         'topaz': 'https://thredds.met.no/thredds/dodsC/topaz/dataset-topaz4-arc-unmasked-be',
         'norkyst_test': 'sample_forcing_data/norkyst_current_14Jul2019.nc'
         }
     wind_sources = {
-        'ecmwf': '/vol/vvfelles/opendrift/forcing_data/ecmwf/ecmwf_aggregate.nc',
+        #'ecmwf': 'https://thredds.met.no/thredds/dodsC/ecmwf/atmo/ec_atmo_0_1deg_%Y%m%dT000000Z_3h.nc',
+        'ecmwf': '/noosdrift/forcing/ecmwf_aggregate.nc',
         'ecmwf_test': 'sample_forcing_data/ec_wind_14Jul2019.nc',
         'arome': 'https://thredds.met.no/thredds/dodsC/meps25files/meps_det_extracted_2_5km_latest.nc',
         'ncep': 'http://oos.soest.hawaii.edu/thredds/dodsC/hioos/model/atm/ncep_global/NCEP_Global_Atmospheric_Model_best.ncd',
@@ -77,6 +80,9 @@ def run_opendrift_simulation_request(request_json_file):
         j['simulation_description']['output_path'] = '.'
 
     # Read some parameters
+    start_time = datetime.strptime(
+        j['simulation_description']['simulation_start_time'],
+        '%Y-%m-%dT%H:%M:%Sz')
     end_time = datetime.strptime(
         j['simulation_description']['simulation_end_time'],
         '%Y-%m-%dT%H:%M:%Sz')
@@ -97,7 +103,16 @@ def run_opendrift_simulation_request(request_json_file):
     else:
         wind_URL = wind_sources[wind_source]
 
-    current_reader = reader_netCDF_CF_generic.Reader(current_URL)
+    wind_URL = start_time.strftime(wind_URL)
+
+    if current_source == 'cmems-nws1.5':
+        cmems_user, cmems_password = open(
+            '/home/ubuntu/noosdrift/nodes/.cmems_user.txt', 'r').read().splitlines()
+        current_reader = reader_cmems.Reader(
+            cmems_user=cmems_user, cmems_password=cmems_password,
+            serviceID=current_URL)
+    else:
+        current_reader = reader_netCDF_CF_generic.Reader(current_URL)
     wind_reader = reader_netCDF_CF_generic.Reader(wind_URL)
 
     # Check that readers cover the requested time and area
