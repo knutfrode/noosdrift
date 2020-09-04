@@ -34,7 +34,7 @@ def run_opendrift_simulation_request(request_json_file):
         'topaz': 'https://thredds.met.no/thredds/dodsC/topaz/dataset-topaz4-arc-unmasked-be'
         }
     wind_sources = {
-        'ecmwf': 'https://thredds.met.no/thredds/dodsC/ecmwf/atmo/ec_atmo_0_1deg_%Y%m%dT000000Z_3h.nc',
+        #'ecmwf': 'https://thredds.met.no/thredds/dodsC/ecmwf/atmo/ec_atmo_0_1deg_%Y%m%dT000000Z_3h.nc',
         'arome': 'https://thredds.met.no/thredds/dodsC/mepslatest/meps_lagged_6_h_latest_2_5km_latest.nc',
         'ncep': 'https://pae-paha.pacioos.hawaii.edu/thredds/dodsC/ncep_global/NCEP_Global_Atmospheric_Model_best.ncd'
         }
@@ -105,7 +105,7 @@ def run_opendrift_simulation_request(request_json_file):
             '/home/ubuntu/noosdrift/nodes/.cmems_user.txt', 'r').read().splitlines()
         current_reader = reader_cmems.Reader(
             cmems_user=cmems_user, cmems_password=cmems_password,
-            serviceID=current_URL, ID='_'+wind_source)  # Add wind_source to get unique filename
+            serviceID=current_URL, ID='_'+current_source+'_'+wind_source)  # Add wind_source to get unique filename
     else:
         current_reader = reader_netCDF_CF_generic.Reader(current_URL)
     wind_reader = reader_netCDF_CF_generic.Reader(wind_URL)
@@ -126,10 +126,10 @@ def run_opendrift_simulation_request(request_json_file):
     drifter_name = j['drifter']['drifter_name']
     logfile = request_json_file + '.log'
     if j['drifter']['drifter_type'] == 'oil':
-        from opendrift.models.openoil3D import OpenOil3D
+        from opendrift.models.openoil import OpenOil
         seed_kwargs['oiltype'] = oil_type_mapping[drifter_name]
         seed_kwargs['z'] = depths
-        o = OpenOil3D(weathering_model='noaa', logfile=logfile)
+        o = OpenOil(weathering_model='noaa', logfile=logfile)
     elif j['drifter']['drifter_type'] == 'object':
         print(drifter_name)
         #seed_kwargs['objectType'] = drifter_name
