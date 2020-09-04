@@ -29,19 +29,14 @@ def run_opendrift_simulation_request(request_json_file):
     }
 
     current_sources = {
-        'cmems_nws7_test': 'sample_forcing_data/nws_current_14Jul2019.nc',
         'cmems-nws1.5': 'NORTHWESTSHELF_ANALYSIS_FORECAST_PHY_004_013-TDS',
         'norkyst': 'https://thredds.met.no/thredds/dodsC/sea/norkyst800m/1h/aggregate_be',
-        'topaz': 'https://thredds.met.no/thredds/dodsC/topaz/dataset-topaz4-arc-unmasked-be',
-        'norkyst_test': 'sample_forcing_data/norkyst_current_14Jul2019.nc'
+        'topaz': 'https://thredds.met.no/thredds/dodsC/topaz/dataset-topaz4-arc-unmasked-be'
         }
     wind_sources = {
-        #'ecmwf': 'https://thredds.met.no/thredds/dodsC/ecmwf/atmo/ec_atmo_0_1deg_%Y%m%dT000000Z_3h.nc',
-        'ecmwf': '/noosdrift/forcing/ecmwf_aggregate.nc',
-        'ecmwf_test': 'sample_forcing_data/ec_wind_14Jul2019.nc',
-        'arome': 'https://thredds.met.no/thredds/dodsC/meps25files/meps_det_extracted_2_5km_latest.nc',
-        'ncep': 'http://oos.soest.hawaii.edu/thredds/dodsC/hioos/model/atm/ncep_global/NCEP_Global_Atmospheric_Model_best.ncd',
-        'arome_test': 'sample_forcing_data/arome_wind_14Jul2019.nc'
+        'ecmwf': 'https://thredds.met.no/thredds/dodsC/ecmwf/atmo/ec_atmo_0_1deg_%Y%m%dT000000Z_3h.nc',
+        'arome': 'https://thredds.met.no/thredds/dodsC/mepslatest/meps_lagged_6_h_latest_2_5km_latest.nc',
+        'ncep': 'https://pae-paha.pacioos.hawaii.edu/thredds/dodsC/ncep_global/NCEP_Global_Atmospheric_Model_best.ncd'
         }
 
     oil_type_mapping = {  # from Noos-name to OpenDrift oil name
@@ -110,7 +105,7 @@ def run_opendrift_simulation_request(request_json_file):
             '/home/ubuntu/noosdrift/nodes/.cmems_user.txt', 'r').read().splitlines()
         current_reader = reader_cmems.Reader(
             cmems_user=cmems_user, cmems_password=cmems_password,
-            serviceID=current_URL)
+            serviceID=current_URL, ID='_'+wind_source)  # Add wind_source to get unique filename
     else:
         current_reader = reader_netCDF_CF_generic.Reader(current_URL)
     wind_reader = reader_netCDF_CF_generic.Reader(wind_URL)
