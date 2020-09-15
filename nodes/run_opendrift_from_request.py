@@ -29,7 +29,7 @@ def run_opendrift_simulation_request(request_json_file):
     }
 
     current_sources = {
-        'cmems-nws1.5': 'NORTHWESTSHELF_ANALYSIS_FORECAST_PHY_004_013-TDS',
+        'cmems-nws1.5': 'MetO-NWS-PHY-hi-CUR',
         'norkyst': 'https://thredds.met.no/thredds/dodsC/sea/norkyst800m/1h/aggregate_be',
         'topaz': 'https://thredds.met.no/thredds/dodsC/topaz/dataset-topaz4-arc-unmasked-be'
         }
@@ -105,7 +105,7 @@ def run_opendrift_simulation_request(request_json_file):
             '/home/ubuntu/noosdrift/nodes/.cmems_user.txt', 'r').read().splitlines()
         current_reader = reader_cmems.Reader(
             cmems_user=cmems_user, cmems_password=cmems_password,
-            serviceID=current_URL, ID='_'+current_source+'_'+wind_source)  # Add wind_source to get unique filename
+            dataset=current_URL, ID='_'+current_source+'_'+wind_source)  # Add wind_source to get unique filename
     else:
         current_reader = reader_netCDF_CF_generic.Reader(current_URL)
     wind_reader = reader_netCDF_CF_generic.Reader(wind_URL)
